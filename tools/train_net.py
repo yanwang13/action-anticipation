@@ -76,6 +76,7 @@ def train_epoch(
         loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
 
         # Compute the loss.
+        # print(f'preds shape: {preds.shape}, labels shape: {labels.shape}')
         loss = loss_fun(preds, labels)
 
         # check Nan Loss.
@@ -143,21 +144,30 @@ def train_epoch(
             )
             # write to tensorboard format if available.
             if writer is not None:
-                writer.add_scalars(
-                    {
-                        "Train/loss": loss,
-                        "Train/lr": lr,
-                        "Train/Top1_err": top1_err,
-                        "Train/Top5_err": top5_err,
-                    },
-                    global_step=data_size * cur_epoch + cur_iter,
-                )
+                if cfg.DATA.MULTI_LABEL:
+                    writer.add_scalars(
+                        {
+                            "Train/loss": loss,
+                            "Train/lr": lr,
+                        },
+                        global_step=data_size * cur_epoch + cur_iter,
+                    )
+                else:
+                    writer.add_scalars(
+                        {
+                            "Train/loss": loss,
+                            "Train/lr": lr,
+                            "Train/Top1_err": top1_err,
+                            "Train/Top5_err": top5_err,
+                        },
+                        global_step=data_size * cur_epoch + cur_iter,
+                    )
 
         train_meter.log_iter_stats(cur_epoch, cur_iter)
         train_meter.iter_tic()
 
     # Log epoch stats.
-    train_meter.log_epoch_stats(cur_epoch)
+    train_meter.log_epoch_stats(cur_epoch, writer)
     train_meter.reset()
 
 
@@ -259,7 +269,7 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
         val_meter.iter_tic()
 
     # Log epoch stats.
-    val_meter.log_epoch_stats(cur_epoch)
+    val_meter.log_epoch_stats(cur_epoch, writer)
     # write to tensorboard format if available.
     if writer is not None:
         if cfg.DETECTION.ENABLE:

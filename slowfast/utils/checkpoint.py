@@ -182,6 +182,7 @@ def load_checkpoint(
     optimizer=None,
     inflation=False,
     convert_from_caffe2=False,
+    verbose=True
 ):
     """
     Load the checkpoint from the given file. If inflation is True, inflate the
@@ -231,14 +232,15 @@ def load_checkpoint(
                     state_dict[converted_key] = torch.tensor(
                         caffe2_checkpoint["blobs"][key]
                     ).clone()
-                    logger.info(
-                        "{}: {} => {}: {}".format(
-                            key,
-                            c2_blob_shape,
-                            converted_key,
-                            tuple(model_blob_shape),
+                    if verbose:
+                        logger.info(
+                            "{}: {} => {}: {}".format(
+                                key,
+                                c2_blob_shape,
+                                converted_key,
+                                tuple(model_blob_shape),
+                            )
                         )
-                    )
                 else:
                     logger.warn(
                         "!! {}: {} does not match {}: {}".format(
@@ -447,6 +449,7 @@ def load_train_checkpoint(cfg, model, optimizer):
             optimizer,
             inflation=cfg.TRAIN.CHECKPOINT_INFLATE,
             convert_from_caffe2=cfg.TRAIN.CHECKPOINT_TYPE == "caffe2",
+            verbose = False
         )
         start_epoch = checkpoint_epoch + 1
     else:

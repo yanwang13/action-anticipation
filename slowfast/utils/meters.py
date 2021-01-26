@@ -294,6 +294,8 @@ class TestMeter(object):
                     self.video_labels[vid_id].type(torch.FloatTensor),
                     labels[ind].type(torch.FloatTensor),
                 )
+            import pdb
+            pdb.set_trace()
             self.video_labels[vid_id] = labels[ind]
             if self.ensemble_method == "sum":
                 self.video_preds[vid_id] += preds[ind]
@@ -525,7 +527,7 @@ class TrainMeter(object):
             stats["top5_err"] = self.mb_top5_err.get_win_median()
         logging.log_json_stats(stats)
 
-    def log_epoch_stats(self, cur_epoch):
+    def log_epoch_stats(self, cur_epoch, writer=None):
         """
         Log the stats of the current epoch.
         Args:
@@ -551,6 +553,24 @@ class TrainMeter(object):
             stats["top1_err"] = top1_err
             stats["top5_err"] = top5_err
             stats["loss"] = avg_loss
+
+            if writer is not None:
+                writer.add_scalars(
+                    {
+                        "Train/Avg_loss": avg_loss,
+                        "Train/Epoch_Top1_err": top1_err,
+                        "Train/Epoch_Top5_err": top5_err,
+                    },
+                    global_step = cur_epoch,
+                )
+        else:
+            if writer is not None:
+                writer.add_scalars(
+                    {
+                        "Train/Avg_loss": self.loss_total / self.num_samples,
+                    },
+                    global_step = cur_epoch,
+                )
         logging.log_json_stats(stats)
 
 
@@ -655,7 +675,7 @@ class ValMeter(object):
             stats["top5_err"] = self.mb_top5_err.get_win_median()
         logging.log_json_stats(stats)
 
-    def log_epoch_stats(self, cur_epoch):
+    def log_epoch_stats(self, cur_epoch, writer=None):
         """
         Log the stats of the current epoch.
         Args:
@@ -673,6 +693,13 @@ class ValMeter(object):
                 torch.cat(self.all_preds).cpu().numpy(),
                 torch.cat(self.all_labels).cpu().numpy(),
             )
+            if writer is not None:
+                writer.add_scalars(
+                    {
+                        "Val/map": stats["map"],
+                    },
+                    global_step = cur_epoch,
+                )
         else:
             top1_err = self.num_top1_mis / self.num_samples
             top5_err = self.num_top5_mis / self.num_samples
@@ -683,6 +710,17 @@ class ValMeter(object):
             stats["top5_err"] = top5_err
             stats["min_top1_err"] = self.min_top1_err
             stats["min_top5_err"] = self.min_top5_err
+
+            if writer is not None:
+                writer.add_scalars(
+                    {
+                        "Val/Epoch_Top1_err": stats["top1_err"],
+                        "Val/Epoch_Top5_err": stats["top5_err"],
+                        "Val/Min_Top1_err": stats["min_top1_err"],
+                        "Val/Min_Top5_err": stats["min_top5_err"],
+                    },
+                    global_step = cur_epoch,
+                )
 
         logging.log_json_stats(stats)
 
