@@ -54,6 +54,8 @@ class Charades(torch.utils.data.Dataset):
         ], "Split '{}' not supported for Charades ".format(mode)
         self.mode = mode
         self.cfg = cfg
+        if cfg.PREDICT_MODE:
+            self.fps = cfg.DATA.ORIGIN_FPS
 
         self._video_meta = {}
         self._num_retries = num_retries
@@ -77,7 +79,7 @@ class Charades(torch.utils.data.Dataset):
         """
         path_to_file = os.path.join(
             self.cfg.DATA.PATH_TO_DATA_DIR,
-            "{}.csv".format("train" if self.mode == "train" else "val"),
+            "sf_{}.csv".format("train" if self.mode == "train" else "val"),
         )
         assert PathManager.exists(path_to_file), "{} dir not found".format(
             path_to_file
@@ -192,6 +194,9 @@ class Charades(torch.utils.data.Dataset):
             )
             start = int(round(gap * temporal_sample_index))
 
+        if self.cfg.PREDICT_MODE:
+            # Constrain the maximum frame as one sec before the video ends
+            video_length = video_length - self.fps
         seq = [
             max(min(start + i * sampling_rate, video_length - 1), 0)
             for i in range(num_frames)
@@ -203,6 +208,11 @@ class Charades(torch.utils.data.Dataset):
             )
         )
 
+        #import pdb
+        #pdb.set_trace()
+        # Get the labels which correspond to the frame seq
+        if self.cfg.PREDICT_MODE:
+            seq = [ s + self.fps for s in seq ]
         label = utils.aggregate_labels(
             [self._labels[index][i] for i in range(seq[0], seq[-1] + 1)]
         )

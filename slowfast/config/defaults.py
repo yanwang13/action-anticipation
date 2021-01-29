@@ -13,6 +13,19 @@ _C = CfgNode()
 
 
 # ---------------------------------------------------------------------------- #
+# Prediction options
+# ---------------------------------------------------------------------------- #
+# The timestpes before the action begins
+# anticipation time slot
+_C.PREDICTION_TIMESTEPS = 1
+
+_C.PREDICT_MODE = False
+
+# OBSERVED TIME
+_C.OBSERVED_TIME = 3
+
+
+# ---------------------------------------------------------------------------- #
 # Batch norm options
 # ---------------------------------------------------------------------------- #
 _C.BN = CfgNode()
@@ -259,6 +272,8 @@ _C.DATA.TRAIN_CROP_SIZE = 224
 # The spatial crop size for testing.
 _C.DATA.TEST_CROP_SIZE = 256
 
+# Input videos original fps
+_C.DATA.ORIGIN_FPS = 30
 # Input videos may has different fps, convert it to the target video fps before
 # frame sampling.
 _C.DATA.TARGET_FPS = 30
@@ -537,7 +552,7 @@ _C.TENSORBOARD = CfgNode()
 
 # Log to summary writer, this will automatically.
 # log loss, lr and metrics during train/eval.
-_C.TENSORBOARD.ENABLE = False
+_C.TENSORBOARD.ENABLE = True
 # Provide path to prediction results for visualization.
 # This is a pickle file of [prediction_tensor, label_tensor]
 _C.TENSORBOARD.PREDICTIONS_PATH = ""
