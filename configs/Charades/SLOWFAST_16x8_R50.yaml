@@ -1,13 +1,16 @@
 TRAIN:
   ENABLE: True
   DATASET: charades
-  BATCH_SIZE: 16
+  BATCH_SIZE: 8 # 16
   EVAL_PERIOD: 6
   CHECKPOINT_PERIOD: 6
   AUTO_RESUME: True
-  CHECKPOINT_FILE_PATH: SLOWFAST_8x8_R50.pkl # please download from the model zoo.
+  CHECKPOINT_FILE_PATH: "/home/r08944003/SlowFast/pretrained/kinetics_SF_8x8_R50.pkl"#SLOWFAST_8x8_R50.pkl # please download from the model zoo.
   CHECKPOINT_TYPE: caffe2
 DATA:
+  PATH_TO_DATA_DIR: "/work/r08944003/Charades"
+  PATH_PREFIX: "/work/r08944003/Charades/Charades_v1_rgb"
+  ORIGIN_FPS: 24
   NUM_FRAMES: 64
   SAMPLING_RATE: 2
   TRAIN_JITTER_SCALES: [256, 340]
@@ -41,7 +44,7 @@ BN:
   USE_PRECISE_STATS: True
   NUM_BATCHES_PRECISE: 200
   NORM_TYPE: sync_batchnorm
-  NUM_SYNC_DEVICES: 4
+  #NUM_SYNC_DEVICES: 4
 SOLVER:
   BASE_LR: 0.0375
   LR_POLICY: steps_with_relative_lrs
@@ -68,8 +71,7 @@ TEST:
 DATA_LOADER:
   NUM_WORKERS: 8
   PIN_MEMORY: True
-NUM_GPUS: 8
+NUM_GPUS: 1
 NUM_SHARDS: 1
 RNG_SEED: 0
-OUTPUT_DIR: .
 LOG_MODEL_INFO: False

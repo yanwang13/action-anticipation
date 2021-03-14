@@ -294,8 +294,8 @@ class TestMeter(object):
                     self.video_labels[vid_id].type(torch.FloatTensor),
                     labels[ind].type(torch.FloatTensor),
                 )
-            import pdb
-            pdb.set_trace()
+            #import pdb
+            #pdb.set_trace()
             self.video_labels[vid_id] = labels[ind]
             if self.ensemble_method == "sum":
                 self.video_preds[vid_id] += preds[ind]
