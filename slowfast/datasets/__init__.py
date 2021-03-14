@@ -4,5 +4,7 @@
 from .ava_dataset import Ava  # noqa
 from .build import DATASET_REGISTRY, build_dataset  # noqa
 from .charades import Charades  # noqa
+from .my_charades import My_charades  # noqa
+from .breakfast import Breakfast  # noqa
 from .kinetics import Kinetics  # noqa
 from .ssv2 import Ssv2  # noqa
