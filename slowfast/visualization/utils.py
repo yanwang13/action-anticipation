@@ -62,7 +62,7 @@ def plot_confusion_matrix(cmtx, num_classes, class_names=None, figsize=None):
     if class_names is None or type(class_names) != list:
         class_names = [str(i) for i in range(num_classes)]
 
-    figure = plt.figure(figsize=figsize)
+    figure = plt.figure(figsize=(20,20))
     plt.imshow(cmtx, interpolation="nearest", cmap=plt.cm.Blues)
     plt.title("Confusion matrix")
     plt.colorbar()
