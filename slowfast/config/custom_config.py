@@ -6,4 +6,5 @@
 
 def add_custom_config(_C):
     # Add your own customized configs.
-    pass
+    _C.TRAIN.MULTI_TASK = False
+    return _C

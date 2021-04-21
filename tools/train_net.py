@@ -24,7 +24,7 @@ logger = logging.get_logger(__name__)
 
 
 def train_epoch(
-    train_loader, model, optimizer, train_meter, cur_epoch, cfg, writer=None
+    train_loader, model, optimizer, train_meter, cur_epoch, cfg, writer=None, lamb=0.1
 ):
     """
     Perform the video training for one epoch.
@@ -53,7 +53,12 @@ def train_epoch(
                     inputs[i] = inputs[i].cuda(non_blocking=True)
             else:
                 inputs = inputs.cuda(non_blocking=True)
-            labels = labels.cuda()
+
+            if isinstance(labels, (list,)):
+                for i in range(len(labels)):
+                    labels[i] = labels[i].cuda(non_blocking=True)
+            else:
+                labels = labels.cuda()
             for key, val in meta.items():
                 if isinstance(val, (list,)):
                     for i in range(len(val)):
@@ -77,7 +82,10 @@ def train_epoch(
 
         # Compute the loss.
         # print(f'preds shape: {preds.shape}, labels shape: {labels.shape}')
-        loss = loss_fun(preds, labels)
+        if cfg.TRAIN.MULTI_TASK:
+            loss = loss_fun(preds[0], labels[0]) + lamb*loss_fun(preds[1], labels[1])
+        else:
+            loss = loss_fun(preds, labels)
 
         # check Nan Loss.
         misc.check_nan_losses(loss)
@@ -112,10 +120,16 @@ def train_epoch(
                 loss = loss.item()
             else:
                 # Compute the errors.
-                num_topks_correct = metrics.topks_correct(preds, labels, (1, 5))
-                top1_err, top5_err = [
-                    (1.0 - x / preds.size(0)) * 100.0 for x in num_topks_correct
-                ]
+                if cfg.TRAIN.MULTI_TASK:
+                    num_topks_correct = metrics.topks_correct(preds[0], labels[0], (1, 5))
+                    top1_err, top5_err = [
+                        (1.0 - x / preds[0].size(0)) * 100.0 for x in num_topks_correct
+                    ]
+                else:
+                    num_topks_correct = metrics.topks_correct(preds, labels, (1, 5))
+                    top1_err, top5_err = [
+                        (1.0 - x / preds.size(0)) * 100.0 for x in num_topks_correct
+                    ]
 
                 # Gather all the predictions across all the devices.
                 if cfg.NUM_GPUS > 1:
@@ -153,15 +167,32 @@ def train_epoch(
                         global_step=data_size * cur_epoch + cur_iter,
                     )
                 else:
-                    writer.add_scalars(
-                        {
-                            "Train/loss": loss,
-                            "Train/lr": lr,
-                            "Train/Top1_err": top1_err,
-                            "Train/Top5_err": top5_err,
-                        },
-                        global_step=data_size * cur_epoch + cur_iter,
-                    )
+                    if not cfg.TRAIN.MULTI_TASK:
+                        writer.add_scalars(
+                            {
+                                "Train/loss": loss,
+                                "Train/lr": lr,
+                                "Train/Top1_err": top1_err,
+                                "Train/Top5_err": top5_err,
+                            },
+                            global_step=data_size * cur_epoch + cur_iter,
+                        )
+                    else:
+                        int_topks_correct = metrics.topks_correct(preds[1], labels[1], (1, 5))
+                        int_top1_err, int_top5_err = [
+                            (1.0 - x / preds[1].size(0)) * 100.0 for x in num_topks_correct
+                        ]
+                        writer.add_scalars(
+                            {
+                                "Train/loss": loss,
+                                "Train/lr": lr,
+                                "Train/Top1_err": top1_err,
+                                "Train/Top5_err": top5_err,
+                                "Train/Intention_Top1_err": int_top1_err,
+                                "Train/Intention_Top5_err": int_top5_err,
+                            },
+                            global_step=data_size * cur_epoch + cur_iter,
+                        )
 
         train_meter.log_iter_stats(cur_epoch, cur_iter)
         train_meter.iter_tic()

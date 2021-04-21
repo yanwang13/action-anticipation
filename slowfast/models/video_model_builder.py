@@ -350,31 +350,59 @@ class SlowFast(nn.Module):
                 aligned=cfg.DETECTION.ALIGNED,
             )
         else:
-            self.head = head_helper.ResNetBasicHead(
-                dim_in=[
-                    width_per_group * 32,
-                    width_per_group * 32 // cfg.SLOWFAST.BETA_INV,
-                ],
-                num_classes=cfg.MODEL.NUM_CLASSES,
-                pool_size=[None, None]
-                if cfg.MULTIGRID.SHORT_CYCLE
-                else [
-                    [
-                        cfg.DATA.NUM_FRAMES
-                        // cfg.SLOWFAST.ALPHA
-                        // pool_size[0][0],
-                        cfg.DATA.CROP_SIZE // 32 // pool_size[0][1],
-                        cfg.DATA.CROP_SIZE // 32 // pool_size[0][2],
+            if cfg.TRAIN.MULTI_TASK:
+                self.head = head_helper.ResNetMultiTaskHead(
+                    dim_in=[
+                        width_per_group * 32,
+                        width_per_group * 32 // cfg.SLOWFAST.BETA_INV,
                     ],
-                    [
-                        cfg.DATA.NUM_FRAMES // pool_size[1][0],
-                        cfg.DATA.CROP_SIZE // 32 // pool_size[1][1],
-                        cfg.DATA.CROP_SIZE // 32 // pool_size[1][2],
+                    num_classes=47, #cfg.MODEL.NUM_CLASSES,
+                    num_intentions=10,# TO DO: add intention num classes to config
+                    pool_size=[None, None]
+                    if cfg.MULTIGRID.SHORT_CYCLE
+                    else [
+                        [
+                            cfg.DATA.NUM_FRAMES
+                            // cfg.SLOWFAST.ALPHA
+                            // pool_size[0][0],
+                            cfg.DATA.CROP_SIZE // 32 // pool_size[0][1],
+                            cfg.DATA.CROP_SIZE // 32 // pool_size[0][2],
+                        ],
+                        [
+                            cfg.DATA.NUM_FRAMES // pool_size[1][0],
+                            cfg.DATA.CROP_SIZE // 32 // pool_size[1][1],
+                            cfg.DATA.CROP_SIZE // 32 // pool_size[1][2],
+                        ],
+                    ],  # None for AdaptiveAvgPool3d((1, 1, 1))
+                    dropout_rate=cfg.MODEL.DROPOUT_RATE,
+                    act_func=cfg.MODEL.HEAD_ACT,
+                )
+            else:
+                self.head = head_helper.ResNetBasicHead(
+                    dim_in=[
+                        width_per_group * 32,
+                        width_per_group * 32 // cfg.SLOWFAST.BETA_INV,
                     ],
-                ],  # None for AdaptiveAvgPool3d((1, 1, 1))
-                dropout_rate=cfg.MODEL.DROPOUT_RATE,
-                act_func=cfg.MODEL.HEAD_ACT,
-            )
+                    num_classes=cfg.MODEL.NUM_CLASSES,
+                    pool_size=[None, None]
+                    if cfg.MULTIGRID.SHORT_CYCLE
+                    else [
+                        [
+                            cfg.DATA.NUM_FRAMES
+                            // cfg.SLOWFAST.ALPHA
+                            // pool_size[0][0],
+                            cfg.DATA.CROP_SIZE // 32 // pool_size[0][1],
+                            cfg.DATA.CROP_SIZE // 32 // pool_size[0][2],
+                        ],
+                        [
+                            cfg.DATA.NUM_FRAMES // pool_size[1][0],
+                            cfg.DATA.CROP_SIZE // 32 // pool_size[1][1],
+                            cfg.DATA.CROP_SIZE // 32 // pool_size[1][2],
+                        ],
+                    ],  # None for AdaptiveAvgPool3d((1, 1, 1))
+                    dropout_rate=cfg.MODEL.DROPOUT_RATE,
+                    act_func=cfg.MODEL.HEAD_ACT,
+                )
 
     def forward(self, x, bboxes=None):
         x = self.s1(x)

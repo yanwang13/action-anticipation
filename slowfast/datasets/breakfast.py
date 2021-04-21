@@ -96,7 +96,8 @@ class Breakfast(torch.utils.data.Dataset):
         construct the charades label loader
         """
         path_to_labelfile = os.path.join(
-            self.cfg.DATA.PATH_TO_DATA_DIR, "breakfast_{}_01.csv".format(self.mode)
+            #self.cfg.DATA.PATH_TO_DATA_DIR, "breakfast_{}_01.csv".format(self.mode)
+            self.cfg.DATA.PATH_TO_DATA_DIR, "bf_intention_{}.csv".format(self.mode)
         )
         assert os.path.exists(path_to_labelfile), "{} dir not found".format(
             path_to_labelfile
@@ -130,7 +131,10 @@ class Breakfast(torch.utils.data.Dataset):
                     self._path_to_images.append(
                         os.path.join(data_path_prefix, row["path"])
                     )
-                    self._labels.append(int(row['label'])-1)
+                    if self.mode == 'train' and self.cfg.TRAIN.MULTI_TASK:
+                        self._labels.append((int(row['label'])-1, int(row['intention_label'])))
+                    else:
+                        self._labels.append(int(row['label'])-1)
                     self._spatial_temporal_idx.append(idx)
         assert (
             len(self._path_to_images) > 0
