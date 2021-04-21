@@ -51,3 +51,15 @@ def build_model(cfg, gpu_id=None):
             module=model, device_ids=[cur_device], output_device=cur_device
         )
     return model
+
+def set_finetune_mode(model, mode):
+    if mode == 'all':
+        for param in model.parameters():
+            param.requires_grad = True
+    elif mode == 'fc':
+        for param in model.parameters():
+            param.requires_grad = False
+        for param in model.head.parameters(): # Only update the fc layer's params
+            param.requires_grad = True
+    else:
+        raise ValueError(f'finetune mode {mode} not supported.')

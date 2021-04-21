@@ -16,7 +16,7 @@ import slowfast.utils.metrics as metrics
 import slowfast.utils.misc as misc
 import slowfast.visualization.tensorboard_vis as tb
 from slowfast.datasets import loader
-from slowfast.models import build_model
+from slowfast.models import build_model, set_finetune_mode
 from slowfast.utils.meters import AVAMeter, TrainMeter, ValMeter
 from slowfast.utils.multigrid import MultigridSchedule
 
@@ -483,6 +483,14 @@ def train(cfg):
 
         # Shuffle the dataset.
         loader.shuffle_dataset(train_loader, cur_epoch)
+
+        # set finetune params if needed
+        if cfg.TRAIN.FINETUNE:
+            if cur_epoch < cfg.TRAIN.FINETUNE_EPOCH:
+                set_finetune_mode(model, 'fc')
+            else:
+                set_finetune_mode(model, 'all')
+
         # Train for one epoch.
         train_epoch(
             train_loader, model, optimizer, train_meter, cur_epoch, cfg, writer
