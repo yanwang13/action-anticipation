@@ -300,7 +300,11 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
         val_meter.iter_tic()
 
     # Log epoch stats.
-    val_meter.log_epoch_stats(cur_epoch, writer)
+    save_current_ckpts, best_err = val_meter.log_epoch_stats(cur_epoch, writer)
+    # Save the checkpoint of the best result
+    #if save_current_ckpts:
+    #    cu.save_checkpoint(cfg.OUTPUT_DIR, model, optimizer, cur_epoch, cfg, best_err)
+
     # write to tensorboard format if available.
     if writer is not None:
         if cfg.DETECTION.ENABLE:
@@ -320,6 +324,8 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
             )
 
     val_meter.reset()
+
+    return save_current_ckpts, best_err
 
 
 def calculate_and_update_precise_bn(loader, model, num_iters=200, use_gpu=True):
@@ -515,7 +521,11 @@ def train(cfg):
         if misc.is_eval_epoch(
             cfg, cur_epoch, None if multigrid is None else multigrid.schedule
         ):
-            eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer)
+            save_current_ckpts, best_err = eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer)
+
+            # Save the checkpoint of the best result
+            if save_current_ckpts:
+                cu.save_checkpoint(cfg.OUTPUT_DIR, model, optimizer, cur_epoch, cfg, best_err)
 
     if writer is not None:
         writer.close()

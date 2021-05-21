@@ -700,10 +700,16 @@ class ValMeter(object):
                     },
                     global_step = cur_epoch,
                 )
+            #TO DO: add max_map
         else:
             top1_err = self.num_top1_mis / self.num_samples
             top5_err = self.num_top5_mis / self.num_samples
-            self.min_top1_err = min(self.min_top1_err, top1_err)
+            #self.min_top1_err = min(self.min_top1_err, top1_err)
+            if top1_err < self.min_top1_err:
+                save_ckpts = True
+                self.min_top1_err = top1_err
+            else:
+                save_ckpts = False
             self.min_top5_err = min(self.min_top5_err, top5_err)
 
             stats["top1_err"] = top1_err
@@ -723,6 +729,7 @@ class ValMeter(object):
                 )
 
         logging.log_json_stats(stats)
+        return save_ckpts, self.min_top1_err
 
 
 def get_map(preds, labels):

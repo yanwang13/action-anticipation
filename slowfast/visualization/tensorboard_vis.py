@@ -13,6 +13,8 @@ import slowfast.utils.logging as logging
 import slowfast.visualization.utils as vis_utils
 from slowfast.utils.misc import get_class_names
 
+#import datetime
+
 logger = logging.get_logger(__name__)
 log.getLogger("matplotlib").setLevel(log.ERROR)
 
@@ -48,7 +50,10 @@ class TensorboardWriter(object):
                 cfg.OUTPUT_DIR, "runs-{}".format(cfg.TRAIN.DATASET)
             )
         else:
-            log_dir = os.path.join(cfg.OUTPUT_DIR, cfg.TENSORBOARD.LOG_DIR)
+            #log_dir = os.path.join(cfg.OUTPUT_DIR, cfg.TENSORBOARD.LOG_DIR)
+            #start_time = datetime.datetime.now().strftime('%m%d_%H%M%S')
+            #log_dir = os.path.join('runs', cfg.TENSORBOARD.LOG_DIR, start_time)
+            log_dir = cfg.TENSORBOARD.LOG_DIR
 
         self.writer = SummaryWriter(log_dir=log_dir)
         logger.info(

@@ -43,14 +43,17 @@ def get_checkpoint_dir(path_to_job):
     return os.path.join(path_to_job, "checkpoints")
 
 
-def get_path_to_checkpoint(path_to_job, epoch):
+def get_path_to_checkpoint(path_to_job, epoch, best_err=None):
     """
     Get the full path to a checkpoint file.
     Args:
         path_to_job (string): the path to the folder of the current job.
         epoch (int): the number of epoch for the checkpoint.
     """
-    name = "checkpoint_epoch_{:05d}.pyth".format(epoch)
+    if best_err:
+        name = f"checkpoint_epoch_{epoch:05d}_best_err_{best_err:.1f}.pyth"
+    else:
+        name = "checkpoint_epoch_{:05d}.pyth".format(epoch)
     return os.path.join(get_checkpoint_dir(path_to_job), name)
 
 
@@ -104,7 +107,7 @@ def is_checkpoint_epoch(cfg, cur_epoch, multigrid_schedule=None):
     return (cur_epoch + 1) % cfg.TRAIN.CHECKPOINT_PERIOD == 0
 
 
-def save_checkpoint(path_to_job, model, optimizer, epoch, cfg):
+def save_checkpoint(path_to_job, model, optimizer, epoch, cfg, best_err=None):
     """
     Save a checkpoint.
     Args:
@@ -130,7 +133,7 @@ def save_checkpoint(path_to_job, model, optimizer, epoch, cfg):
         "cfg": cfg.dump(),
     }
     # Write the checkpoint.
-    path_to_checkpoint = get_path_to_checkpoint(path_to_job, epoch + 1)
+    path_to_checkpoint = get_path_to_checkpoint(path_to_job, epoch + 1, best_err)
     with PathManager.open(path_to_checkpoint, "wb") as f:
         torch.save(checkpoint, f)
     return path_to_checkpoint

@@ -5,6 +5,8 @@
 
 import argparse
 import sys
+import os
+import datetime
 
 import slowfast.utils.checkpoint as cu
 from slowfast.config.defaults import get_cfg
@@ -54,6 +56,16 @@ def parse_args():
         type=str,
     )
     parser.add_argument(
+        "--exp_name",
+        help="Experiment Name",
+        type=str,
+    )
+    parser.add_argument(
+        "--exp_tag",
+        help="Experiment Name",
+        type=str,
+    )
+    parser.add_argument(
         "opts",
         help="See slowfast/config/defaults.py for all options",
         default=None,
@@ -86,8 +98,12 @@ def load_config(args):
         cfg.SHARD_ID = args.shard_id
     if hasattr(args, "rng_seed"):
         cfg.RNG_SEED = args.rng_seed
-    if hasattr(args, "output_dir"):
-        cfg.OUTPUT_DIR = args.output_dir
+    #if hasattr(args, "output_dir"):
+    #    cfg.OUTPUT_DIR = args.output_dir
+    if hasattr(args, "exp_name") and hasattr(args, "exp_tag"):
+        date = datetime.datetime.now().strftime('%m%d')
+        cfg.TENSORBOARD.LOG_DIR = os.path.join('runs', args.exp_name, f'{date}_{args.exp_tag}')
+        cfg.OUTPUT_DIR = os.path.join('saved', args.exp_name, f'{date}_{args.exp_tag}')
 
     # Create the checkpoint dir.
     cu.make_checkpoint_dir(cfg.OUTPUT_DIR)
