@@ -56,7 +56,11 @@ def perform_test(test_loader, model, test_meter, cfg, writer=None):
                 inputs = inputs.cuda(non_blocking=True)
 
             # Transfer the data to the current GPU device.
-            labels = labels.cuda()
+            if isinstance(labels, (list,)):
+                for i in range(len(labels)):
+                    labels[i] = labels[i].cuda(non_blocking=True)
+            else:
+                labels = labels.cuda()
             video_idx = video_idx.cuda()
             for key, val in meta.items():
                 if isinstance(val, (list,)):
@@ -90,23 +94,37 @@ def perform_test(test_loader, model, test_meter, cfg, writer=None):
             test_meter.log_iter_stats(None, cur_iter)
         else:
             # Perform the forward pass.
-            preds = model(inputs)
+            if not cfg.TRAIN.MULTI_TASK:
+                preds = model(inputs)
+            else:
+                preds, int_preds = model(inputs)
+                labels, int_labels = labels
 
             # Gather all the predictions across all the devices to perform ensemble.
             if cfg.NUM_GPUS > 1:
                 preds, labels, video_idx = du.all_gather(
                     [preds, labels, video_idx]
                 )
+                if cfg.TRAIN.MULTI_TASK:
+                    int_preds, int_labels = du.all_gather([int_preds, int_labels])
             if cfg.NUM_GPUS:
                 preds = preds.cpu()
                 labels = labels.cpu()
                 video_idx = video_idx.cpu()
+                if cfg.TRAIN.MULTI_TASK:
+                    int_preds = int_preds.cpu()
+                    int_labels = int_labels.cpu()
 
             test_meter.iter_toc()
             # Update and log stats.
-            test_meter.update_stats(
-                preds.detach(), labels.detach(), video_idx.detach()
-            )
+            if not cfg.TRAIN.MULTI_TASK:
+                test_meter.update_stats(
+                    preds.detach(), labels.detach(), video_idx.detach()
+                )
+            else:
+                test_meter.update_stats(
+                    preds.detach(), labels.detach(), video_idx.detach(), int_preds.detach(), int_labels.detach()
+                )
             test_meter.log_iter_stats(cur_iter)
 
         test_meter.iter_tic()
@@ -115,11 +133,22 @@ def perform_test(test_loader, model, test_meter, cfg, writer=None):
     if not cfg.DETECTION.ENABLE:
         all_preds = test_meter.video_preds.clone().detach()
         all_labels = test_meter.video_labels
+        if cfg.TRAIN.MULTI_TASK:
+            all_int_preds = test_meter.video_int_preds.clone().detach()
+            all_int_labels = test_meter.video_int_labels
+
         if cfg.NUM_GPUS:
             all_preds = all_preds.cpu()
             all_labels = all_labels.cpu()
+            if cfg.TRAIN.MULTI_TASK:
+                all_int_preds = all_int_preds.cpu()
+                all_int_labels = all_int_labels.cpu()
+
         if writer is not None:
-            writer.plot_eval(preds=all_preds, labels=all_labels)
+            if not cfg.TRAIN.MULTI_TASK:
+                writer.plot_eval(preds=all_preds, labels=all_labels)
+            else:
+                writer.plot_eval(preds=all_preds, labels=all_labels, int_preds=all_int_preds, int_labels=all_int_labels)
 
         if cfg.TEST.SAVE_RESULTS_PATH != "":
             save_path = os.path.join(cfg.OUTPUT_DIR, cfg.TEST.SAVE_RESULTS_PATH)
@@ -184,6 +213,7 @@ def test(cfg):
             len(test_loader),
             cfg.DATA.MULTI_LABEL,
             cfg.DATA.ENSEMBLE_METHOD,
+            cfg.TRAIN.MULTI_TASK,
         )
 
     # Set up writer for logging to Tensorboard format.

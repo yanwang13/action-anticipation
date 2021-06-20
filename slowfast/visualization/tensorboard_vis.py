@@ -103,7 +103,7 @@ class TensorboardWriter(object):
             for key, item in data_dict.items():
                 self.writer.add_scalar(key, item, global_step)
 
-    def plot_eval(self, preds, labels, global_step=None):
+    def plot_eval(self, preds, labels, global_step=None, int_preds=None, int_labels=None):
         """
         Plot confusion matrices and histograms for eval/test set.
         Args:
@@ -126,6 +126,23 @@ class TensorboardWriter(object):
                     class_names=self.class_names,
                     figsize=self.cm_figsize,
                 )
+
+                if (int_preds is not None) and (int_labels is not None):
+                    int_cmtx = vis_utils.get_confusion_matrix(
+                        int_preds, int_labels, 10
+                    )
+                    int_class_names, _, _ = get_class_names("/work/r08944003/Breakfast/intention_ann/bf_intention_classnames.json")
+                    # Add full confusion matrix.
+                    add_confusion_matrix(
+                        self.writer,
+                        int_cmtx,
+                        10,
+                        global_step=global_step,
+                        class_names=int_class_names,
+                        tag="Intention Confusion Matrix",
+                        figsize=self.cm_figsize,
+                    )
+
                 # If a list of subset is provided, plot confusion matrix subset.
                 if self.cm_subset_classes is not None:
                     add_confusion_matrix(

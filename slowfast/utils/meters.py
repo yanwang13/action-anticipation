@@ -229,6 +229,7 @@ class TestMeter(object):
         overall_iters,
         multi_label=False,
         ensemble_method="sum",
+        multitask=False,
     ):
         """
         Construct tensors to store the predictions and labels. Expect to get
@@ -261,6 +262,11 @@ class TestMeter(object):
             else torch.zeros((num_videos)).long()
         )
         self.clip_count = torch.zeros((num_videos)).long()
+
+        if multitask:
+            self.multitask = True
+            self.video_int_preds = torch.zeros((num_videos, 10))
+            self.video_int_labels = (torch.zeros((num_videos)).long())
         # Reset metric.
         self.reset()
 
@@ -274,7 +280,11 @@ class TestMeter(object):
             self.video_preds -= 1e10
         self.video_labels.zero_()
 
-    def update_stats(self, preds, labels, clip_ids):
+        if self.multitask:
+            self.video_int_preds.zero_()
+            self.video_int_labels.zero_()
+
+    def update_stats(self, preds, labels, clip_ids, int_preds=None, int_labels=None):
         """
         Collect the predictions from the current batch and perform on-the-flight
         summation as ensemble.
@@ -310,6 +320,25 @@ class TestMeter(object):
                     )
                 )
             self.clip_count[vid_id] += 1
+
+        if self.multitask:
+            assert preds.shape[0] == int_preds.shape[0]
+            for ind in range(int_preds.shape[0]):
+                vid_id = int(clip_ids[ind]) // self.num_clips
+                if self.video_int_labels[vid_id].sum() > 0:
+                    assert torch.equal(
+                        self.video_int_labels[vid_id].type(torch.FloatTensor),
+                        int_labels[ind].type(torch.FloatTensor),
+                    )
+                self.video_int_labels[vid_id] = int_labels[ind]
+                if self.ensemble_method == "sum":
+                    self.video_int_preds[vid_id] += int_preds[ind]
+                else:
+                    raise NotImplementedError(
+                        "Ensemble Method {} is not supported".format(
+                            self.ensemble_method
+                        )
+                    )
 
     def log_iter_stats(self, cur_iter):
         """
@@ -371,6 +400,19 @@ class TestMeter(object):
                 stats["top{}_acc".format(k)] = "{:.{prec}f}".format(
                     topk, prec=2
                 )
+            if self.multitask:
+                int_topks_correct = metrics.topks_correct(
+                    self.video_int_preds, self.video_int_labels, ks
+                )
+                topks = [
+                    (x / self.video_int_preds.size(0)) * 100.0
+                    for x in int_topks_correct
+                ]
+                assert len({len(ks), len(topks)}) == 1
+                for k, topk in zip(ks, topks):
+                    stats["int_top{}_acc".format(k)] = "{:.{prec}f}".format(
+                        topk, prec=2
+                    )
         logging.log_json_stats(stats)
 
 
@@ -451,6 +493,13 @@ class TrainMeter(object):
         self.num_top5_mis = 0
         self.num_samples = 0
 
+        if cfg.TRAIN.MULTI_TASK:
+            self.multitask = True
+            self.num_int_top1_mis = 0
+            self.num_int_top5_mis = 0
+        else:
+            self.multitask = False
+
     def reset(self):
         """
         Reset the Meter.
@@ -464,6 +513,10 @@ class TrainMeter(object):
         self.num_top5_mis = 0
         self.num_samples = 0
 
+        if self.multitask:
+            self.num_int_top1_mis = 0
+            self.num_int_top5_mis = 0
+
     def iter_tic(self):
         """
         Start to record time.
@@ -476,7 +529,7 @@ class TrainMeter(object):
         """
         self.iter_timer.pause()
 
-    def update_stats(self, top1_err, top5_err, loss, lr, mb_size):
+    def update_stats(self, top1_err, top5_err, loss, lr, mb_size, int_top1_err=None, int_top5_err=None):
         """
         Update the current stats.
         Args:
@@ -498,6 +551,10 @@ class TrainMeter(object):
             # Aggregate stats
             self.num_top1_mis += top1_err * mb_size
             self.num_top5_mis += top5_err * mb_size
+
+            if self.multitask:
+                self.num_int_top1_mis += int_top1_err * mb_size
+                self.num_int_top5_mis += int_top5_err * mb_size
 
     def log_iter_stats(self, cur_epoch, cur_iter):
         """
@@ -555,14 +612,28 @@ class TrainMeter(object):
             stats["loss"] = avg_loss
 
             if writer is not None:
-                writer.add_scalars(
-                    {
-                        "Train/Avg_loss": avg_loss,
-                        "Train/Epoch_Top1_err": top1_err,
-                        "Train/Epoch_Top5_err": top5_err,
-                    },
-                    global_step = cur_epoch,
-                )
+                if not self.multitask:
+                    writer.add_scalars(
+                        {
+                            "Train/Avg_loss": avg_loss,
+                            "Train/Epoch_Top1_err": top1_err,
+                            "Train/Epoch_Top5_err": top5_err,
+                        },
+                        global_step = cur_epoch,
+                    )
+                else:
+                    int_top1_err = self.num_int_top1_mis / self.num_samples
+                    int_top5_err = self.num_int_top5_mis / self.num_samples
+                    writer.add_scalars(
+                        {
+                            "Train/Avg_loss": avg_loss,
+                            "Train/Epoch_Top1_err": top1_err,
+                            "Train/Epoch_Top5_err": top5_err,
+                            "Train/Intention_Top1_err": int_top1_err,
+                            "Train/Intention_Top5_err": int_top5_err,
+                        },
+                        global_step = cur_epoch,
+                    )
         else:
             if writer is not None:
                 writer.add_scalars(
@@ -601,6 +672,13 @@ class ValMeter(object):
         self.all_preds = []
         self.all_labels = []
 
+        if cfg.TRAIN.MULTI_TASK:
+            self.multitask = True
+            self.num_int_top1_mis = 0
+            self.num_int_top5_mis = 0
+        else:
+            self.multitask = False
+
     def reset(self):
         """
         Reset the Meter.
@@ -614,6 +692,10 @@ class ValMeter(object):
         self.all_preds = []
         self.all_labels = []
 
+        if self.multitask:
+            self.num_int_top1_mis = 0
+            self.num_int_top5_mis = 0
+
     def iter_tic(self):
         """
         Start to record time.
@@ -626,7 +708,7 @@ class ValMeter(object):
         """
         self.iter_timer.pause()
 
-    def update_stats(self, top1_err, top5_err, mb_size):
+    def update_stats(self, top1_err, top5_err, mb_size, int_top1_err=None, int_top5_err=None):
         """
         Update the current stats.
         Args:
@@ -639,6 +721,10 @@ class ValMeter(object):
         self.num_top1_mis += top1_err * mb_size
         self.num_top5_mis += top5_err * mb_size
         self.num_samples += mb_size
+
+        if self.multitask:
+            self.num_int_top1_mis += int_top1_err * mb_size
+            self.num_int_top5_mis += int_top5_err * mb_size
 
     def update_predictions(self, preds, labels):
         """
@@ -718,15 +804,30 @@ class ValMeter(object):
             stats["min_top5_err"] = self.min_top5_err
 
             if writer is not None:
-                writer.add_scalars(
-                    {
-                        "Val/Epoch_Top1_err": stats["top1_err"],
-                        "Val/Epoch_Top5_err": stats["top5_err"],
-                        "Val/Min_Top1_err": stats["min_top1_err"],
-                        "Val/Min_Top5_err": stats["min_top5_err"],
-                    },
-                    global_step = cur_epoch,
-                )
+                if not self.multitask:
+                    writer.add_scalars(
+                        {
+                            "Val/Epoch_Top1_err": stats["top1_err"],
+                            "Val/Epoch_Top5_err": stats["top5_err"],
+                            "Val/Min_Top1_err": stats["min_top1_err"],
+                            "Val/Min_Top5_err": stats["min_top5_err"],
+                        },
+                        global_step = cur_epoch,
+                    )
+                else:
+                    int_top1_err = self.num_int_top1_mis / self.num_samples
+                    int_top5_err = self.num_int_top5_mis / self.num_samples
+                    writer.add_scalars(
+                        {
+                            "Val/Epoch_Top1_err": stats["top1_err"],
+                            "Val/Epoch_Top5_err": stats["top5_err"],
+                            "Val/Min_Top1_err": stats["min_top1_err"],
+                            "Val/Min_Top5_err": stats["min_top5_err"],
+                            "Val/Intention_Top1_err": int_top1_err,
+                            "Val/Intention_Top5_err": int_top5_err,
+                        },
+                        global_step = cur_epoch,
+                    )
 
         logging.log_json_stats(stats)
         return save_ckpts, self.min_top1_err

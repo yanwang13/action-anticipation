@@ -24,7 +24,7 @@ logger = logging.get_logger(__name__)
 
 
 def train_epoch(
-    train_loader, model, optimizer, train_meter, cur_epoch, cfg, writer=None, lamb=0.1
+    train_loader, model, optimizer, train_meter, cur_epoch, cfg, writer=None, lamb=1
 ):
     """
     Perform the video training for one epoch.
@@ -125,6 +125,10 @@ def train_epoch(
                     top1_err, top5_err = [
                         (1.0 - x / preds[0].size(0)) * 100.0 for x in num_topks_correct
                     ]
+                    int_topks_correct = metrics.topks_correct(preds[1], labels[1], (1, 5))
+                    int_top1_err, int_top5_err = [
+                        (1.0 - x / preds[1].size(0)) * 100.0 for x in num_topks_correct
+                    ]
                 else:
                     num_topks_correct = metrics.topks_correct(preds, labels, (1, 5))
                     top1_err, top5_err = [
@@ -136,6 +140,8 @@ def train_epoch(
                     loss, top1_err, top5_err = du.all_reduce(
                         [loss, top1_err, top5_err]
                     )
+                    if cfg.TRAIN.MULTI_TASK:
+                        int_top1_err, int_top5_err = du.all_reduce([int_top1_err, int_top5_err])
 
                 # Copy the stats from GPU to CPU (sync point).
                 loss, top1_err, top5_err = (
@@ -146,16 +152,30 @@ def train_epoch(
 
             train_meter.iter_toc()
             # Update and log stats.
-            train_meter.update_stats(
-                top1_err,
-                top5_err,
-                loss,
-                lr,
-                inputs[0].size(0)
-                * max(
-                    cfg.NUM_GPUS, 1
-                ),  # If running  on CPU (cfg.NUM_GPUS == 1), use 1 to represent 1 CPU.
-            )
+            if not cfg.TRAIN.MULTI_TASK:
+                train_meter.update_stats(
+                    top1_err,
+                    top5_err,
+                    loss,
+                    lr,
+                    inputs[0].size(0)
+                    * max(
+                        cfg.NUM_GPUS, 1
+                    ),  # If running  on CPU (cfg.NUM_GPUS == 1), use 1 to represent 1 CPU.
+                )
+            else:
+                train_meter.update_stats(
+                    top1_err,
+                    top5_err,
+                    loss,
+                    lr,
+                    inputs[0].size(0)
+                    * max(
+                        cfg.NUM_GPUS, 1
+                    ),  # If running  on CPU (cfg.NUM_GPUS == 1), use 1 to represent 1 CPU.
+                    int_top1_err = int_top1_err.item(),
+                    int_top5_err = int_top5_err.item(),
+                )
             # write to tensorboard format if available.
             if writer is not None:
                 if cfg.DATA.MULTI_LABEL:
@@ -167,33 +187,15 @@ def train_epoch(
                         global_step=data_size * cur_epoch + cur_iter,
                     )
                 else:
-                    if not cfg.TRAIN.MULTI_TASK:
-                        writer.add_scalars(
-                            {
-                                "Train/loss": loss,
-                                "Train/lr": lr,
-                                "Train/Top1_err": top1_err,
-                                "Train/Top5_err": top5_err,
-                            },
-                            global_step=data_size * cur_epoch + cur_iter,
-                        )
-                    else:
-                        int_topks_correct = metrics.topks_correct(preds[1], labels[1], (1, 5))
-                        int_top1_err, int_top5_err = [
-                            (1.0 - x / preds[1].size(0)) * 100.0 for x in num_topks_correct
-                        ]
-                        writer.add_scalars(
-                            {
-                                "Train/loss": loss,
-                                "Train/lr": lr,
-                                "Train/Top1_err": top1_err,
-                                "Train/Top5_err": top5_err,
-                                "Train/Intention_Top1_err": int_top1_err,
-                                "Train/Intention_Top5_err": int_top5_err,
-                            },
-                            global_step=data_size * cur_epoch + cur_iter,
-                        )
-
+                    writer.add_scalars(
+                        {
+                            "Train/loss": loss,
+                            "Train/lr": lr,
+                            "Train/Top1_err": top1_err,
+                            "Train/Top5_err": top5_err,
+                        },
+                        global_step=data_size * cur_epoch + cur_iter,
+                    )
         train_meter.log_iter_stats(cur_epoch, cur_iter)
         train_meter.iter_tic()
 
@@ -229,7 +231,12 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
                     inputs[i] = inputs[i].cuda(non_blocking=True)
             else:
                 inputs = inputs.cuda(non_blocking=True)
-            labels = labels.cuda()
+
+            if isinstance(labels, (list,)):
+                for i in range(len(labels)):
+                    labels[i] = labels[i].cuda(non_blocking=True)
+            else:
+                labels = labels.cuda()
             for key, val in meta.items():
                 if isinstance(val, (list,)):
                     for i in range(len(val)):
@@ -265,14 +272,26 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
                     preds, labels = du.all_gather([preds, labels])
             else:
                 # Compute the errors.
-                num_topks_correct = metrics.topks_correct(preds, labels, (1, 5))
+                if cfg.TRAIN.MULTI_TASK:
+                    num_topks_correct = metrics.topks_correct(preds[0], labels[0], (1, 5))
+                    top1_err, top5_err = [
+                        (1.0 - x / preds[0].size(0)) * 100.0 for x in num_topks_correct
+                    ]
+                    int_topks_correct = metrics.topks_correct(preds[1], labels[1], (1, 5))
+                    int_top1_err, int_top5_err = [
+                        (1.0 - x / preds[1].size(0)) * 100.0 for x in num_topks_correct
+                    ]
+                else:
+                    num_topks_correct = metrics.topks_correct(preds, labels, (1, 5))
+                    top1_err, top5_err = [
+                        (1.0 - x / preds.size(0)) * 100.0 for x in num_topks_correct
+                    ]
 
-                # Combine the errors across the GPUs.
-                top1_err, top5_err = [
-                    (1.0 - x / preds.size(0)) * 100.0 for x in num_topks_correct
-                ]
+                # Gather all the predictions across all the devices.
                 if cfg.NUM_GPUS > 1:
                     top1_err, top5_err = du.all_reduce([top1_err, top5_err])
+                    if cfg.TRAIN.MULTI_TASK:
+                        int_top1_err, int_top5_err = du.all_reduce([int_top1_err, int_top5_err])
 
                 # Copy the errors from GPU to CPU (sync point).
                 top1_err, top5_err = top1_err.item(), top5_err.item()
@@ -286,6 +305,8 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
                     * max(
                         cfg.NUM_GPUS, 1
                     ),  # If running  on CPU (cfg.NUM_GPUS == 1), use 1 to represent 1 CPU.
+                    int_top1_err = int_top1_err,
+                    int_top5_err = int_top5_err,
                 )
                 # write to tensorboard format if available.
                 if writer is not None:
@@ -294,6 +315,9 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
                         global_step=len(val_loader) * cur_epoch + cur_iter,
                     )
 
+            if cfg.TRAIN.MULTI_TASK:
+                preds = preds[0]
+                labels = labels[0]
             val_meter.update_predictions(preds, labels)
 
         val_meter.log_iter_stats(cur_epoch, cur_iter)

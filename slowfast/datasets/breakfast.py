@@ -131,7 +131,8 @@ class Breakfast(torch.utils.data.Dataset):
                     self._path_to_images.append(
                         os.path.join(data_path_prefix, row["path"])
                     )
-                    if self.mode == 'train' and self.cfg.TRAIN.MULTI_TASK:
+                    #if self.mode == 'train' and self.cfg.TRAIN.MULTI_TASK:
+                    if self.cfg.TRAIN.MULTI_TASK:
                         self._labels.append((int(row['label'])-1, int(row['intention_label'])))
                     else:
                         self._labels.append(int(row['label'])-1)

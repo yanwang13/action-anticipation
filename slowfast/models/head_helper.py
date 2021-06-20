@@ -7,6 +7,8 @@ import torch
 import torch.nn as nn
 from detectron2.layers import ROIAlign
 
+import slowfast.utils.logging as logging
+logger = logging.get_logger(__name__)
 
 class ResNetRoIHead(nn.Module):
     """
@@ -285,6 +287,7 @@ class ResNetMultiTaskHead(nn.Module):
                 "{} is not supported as an activation"
                 "function.".format(act_func)
             )
+        logger.info('Use Multitask head')
 
     def forward(self, inputs):
         assert (
@@ -301,16 +304,14 @@ class ResNetMultiTaskHead(nn.Module):
         if hasattr(self, "dropout"):
             x = self.dropout(x)
         predictions = self.projection(x)
+        intentions = self.projection_intention(x)
 
         # Performs fully convlutional inference.
         if not self.training:
             predictions = self.act(predictions)
             predictions = predictions.mean([1, 2, 3])
-            predictions = predictions.view(predictions.shape[0], -1)
-            return predictions
-        # Only perform multi-tasking during training
-        else:
-            intentions = self.projection_intention(x)
-            intentions = intentions.view(intentions.shape[0], -1)
-            predictions = predictions.view(predictions.shape[0], -1)
-            return [predictions, intentions]
+            intentions = self.act(intentions)
+            intentions = intentions.mean([1,2,3])
+        intentions = intentions.view(intentions.shape[0], -1)
+        predictions = predictions.view(predictions.shape[0], -1)
+        return [predictions, intentions]
