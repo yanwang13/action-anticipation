@@ -96,6 +96,9 @@ def perform_test(test_loader, model, test_meter, cfg, writer=None):
             # Perform the forward pass.
             if not cfg.TRAIN.MULTI_TASK:
                 preds = model(inputs)
+                # TO DO: modify for verb, noun, action setup
+                if len(labels.shape) == 2:
+                    labels = labels[:, -1]
             else:
                 preds, int_preds = model(inputs)
                 labels, int_labels = labels

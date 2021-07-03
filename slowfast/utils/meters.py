@@ -267,6 +267,8 @@ class TestMeter(object):
             self.multitask = True
             self.video_int_preds = torch.zeros((num_videos, 10))
             self.video_int_labels = (torch.zeros((num_videos)).long())
+        else:
+            self.multitask = False
         # Reset metric.
         self.reset()
 

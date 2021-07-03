@@ -3,6 +3,7 @@ import csv
 import glob
 from PIL import Image
 import numpy as np
+import pandas as pd
 import random
 from itertools import chain as chain
 import torch
@@ -90,6 +91,14 @@ class Breakfast(torch.utils.data.Dataset):
                 cfg.TEST.NUM_ENSEMBLE_VIEWS * cfg.TEST.NUM_SPATIAL_CROPS
             )
         logger.info("Constructing Breakfast {}...".format(mode))
+        if cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy':
+            self.vn_label = True
+            self.actions = pd.read_csv('/work/r08944003/Breakfast/actions.csv', index_col='id')
+        else:
+            self.vn_label = False
+        if self.vn_label and cfg.TRAIN.MULTI_TASK:
+            raise NotImplementedError
+
         self._construct_loader()
     def _construct_loader(self):
         """
@@ -135,7 +144,12 @@ class Breakfast(torch.utils.data.Dataset):
                     if self.cfg.TRAIN.MULTI_TASK:
                         self._labels.append((int(row['label'])-1, int(row['intention_label'])))
                     else:
-                        self._labels.append(int(row['label'])-1)
+                        action = int(row['label'])-1
+                        if self.vn_label:
+                            vn = self.actions.iloc[action][['verb', 'noun']].values.astype(int)
+                            self._labels.append(np.append(vn, action))
+                        else:
+                            self._labels.append(action)
                     self._spatial_temporal_idx.append(idx)
         assert (
             len(self._path_to_images) > 0

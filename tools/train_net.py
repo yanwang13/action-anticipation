@@ -79,6 +79,10 @@ def train_epoch(
             preds = model(inputs)
         # Explicitly declare reduction to mean.
         loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
+        if cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy':
+            vi = misc.get_marginal_indexes('verb')
+            ni = misc.get_marginal_indexes('noun')
+            loss_fun.add_marginal_masks([vi, ni], cfg.MODEL.NUM_CLASSES)
 
         # Compute the loss.
         # print(f'preds shape: {preds.shape}, labels shape: {labels.shape}')
@@ -86,6 +90,8 @@ def train_epoch(
             loss = loss_fun(preds[0], labels[0]) + lamb*loss_fun(preds[1], labels[1])
         else:
             loss = loss_fun(preds, labels)
+            if len(labels.shape) == 2:
+                labels = labels[:, -1]
 
         # check Nan Loss.
         misc.check_nan_losses(loss)
@@ -237,6 +243,8 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
                     labels[i] = labels[i].cuda(non_blocking=True)
             else:
                 labels = labels.cuda()
+                if cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy':
+                    labels = labels[:, -1]
             for key, val in meta.items():
                 if isinstance(val, (list,)):
                     for i in range(len(val)):
@@ -293,21 +301,37 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
                     if cfg.TRAIN.MULTI_TASK:
                         int_top1_err, int_top5_err = du.all_reduce([int_top1_err, int_top5_err])
 
-                # Copy the errors from GPU to CPU (sync point).
-                top1_err, top5_err = top1_err.item(), top5_err.item()
+                if cfg.TRAIN.MULTI_TASK:
+                    # Copy the errors from GPU to CPU (sync point).
+                    top1_err, top5_err = top1_err.item(), top5_err.item()
+                    int_top1_err, int_top5_err = int_top1_err.item(), int_top5_err.item()
 
-                val_meter.iter_toc()
-                # Update and log stats.
-                val_meter.update_stats(
-                    top1_err,
-                    top5_err,
-                    inputs[0].size(0)
-                    * max(
-                        cfg.NUM_GPUS, 1
-                    ),  # If running  on CPU (cfg.NUM_GPUS == 1), use 1 to represent 1 CPU.
-                    int_top1_err = int_top1_err,
-                    int_top5_err = int_top5_err,
-                )
+                    val_meter.iter_toc()
+                    # Update and log stats.
+                    val_meter.update_stats(
+                        top1_err,
+                        top5_err,
+                        inputs[0].size(0)
+                        * max(
+                            cfg.NUM_GPUS, 1
+                        ),  # If running  on CPU (cfg.NUM_GPUS == 1), use 1 to represent 1 CPU.
+                        int_top1_err = int_top1_err,
+                        int_top5_err = int_top5_err,
+                    )
+                else:
+                    # Copy the errors from GPU to CPU (sync point).
+                    top1_err, top5_err = top1_err.item(), top5_err.item()
+
+                    val_meter.iter_toc()
+                    # Update and log stats.
+                    val_meter.update_stats(
+                        top1_err,
+                        top5_err,
+                        inputs[0].size(0)
+                        * max(
+                            cfg.NUM_GPUS, 1
+                        ),  # If running  on CPU (cfg.NUM_GPUS == 1), use 1 to represent 1 CPU.
+                    )
                 # write to tensorboard format if available.
                 if writer is not None:
                     writer.add_scalars(

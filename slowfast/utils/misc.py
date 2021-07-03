@@ -5,6 +5,7 @@ import json
 import logging
 import math
 import numpy as np
+import pandas as pd
 import os
 from datetime import datetime
 import psutil
@@ -22,6 +23,29 @@ from slowfast.models.batchnorm_helper import SubBatchNorm3d
 
 logger = logging.get_logger(__name__)
 
+
+def get_marginal_indexes(mode):
+    """
+    This is implementation is referenced from
+    https://github.com/fpv-iplab/action-anticipation-losses/blob/master/MarginalCrossEntropyLoss/MarginalCrossEntropyLoss.py
+
+    For each verb/noun retrieve the list of actions containing that verb/name
+        Input:
+            mode: "verb" or "noun"
+        Output:
+            a list of numpy array of indexes. If verb/noun 3 is contained in actions 2,8,19,
+            then output[3] will be np.array([2,8,19])
+    """
+    # TO DO: the file can be modified by config
+    actions=pd.read_csv('/work/r08944003/Breakfast/actions.csv',index_col='id')
+    vi = []
+    for v in range(actions[mode].max()+1):
+        vals=actions[actions[mode]==v].index.values
+        if len(vals)>0:
+            vi.append(vals)
+        else:
+            vi.append(np.array([0]))
+    return vi
 
 def check_nan_losses(loss):
     """
