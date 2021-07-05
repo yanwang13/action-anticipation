@@ -350,14 +350,13 @@ class SlowFast(nn.Module):
                 aligned=cfg.DETECTION.ALIGNED,
             )
         else:
-            if cfg.TRAIN.MULTI_TASK:
+            if cfg.MULTI_TASK:
                 self.head = head_helper.ResNetMultiTaskHead(
                     dim_in=[
                         width_per_group * 32,
                         width_per_group * 32 // cfg.SLOWFAST.BETA_INV,
                     ],
-                    num_classes=47, #cfg.MODEL.NUM_CLASSES,
-                    num_intentions=10,# TO DO: add intention num classes to config
+                    num_classes=cfg.MODEL.NUM_CLASSES,
                     pool_size=[None, None]
                     if cfg.MULTIGRID.SHORT_CYCLE
                     else [
@@ -383,7 +382,7 @@ class SlowFast(nn.Module):
                         width_per_group * 32,
                         width_per_group * 32 // cfg.SLOWFAST.BETA_INV,
                     ],
-                    num_classes=cfg.MODEL.NUM_CLASSES,
+                    num_classes=cfg.MODEL.NUM_CLASSES[0],
                     pool_size=[None, None]
                     if cfg.MULTIGRID.SHORT_CYCLE
                     else [

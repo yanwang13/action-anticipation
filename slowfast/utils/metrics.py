@@ -4,6 +4,7 @@
 """Functions for computing metrics."""
 
 import torch
+import numpy as np
 
 
 def topks_correct(preds, labels, ks):
@@ -41,6 +42,42 @@ def topks_correct(preds, labels, ks):
     ]
     return topks_correct
 
+def multitask_topks_correct(preds, labels, ks=(1,), use_cuda=True):
+    """
+    Args:
+        preds: tuple(torch.FloatTensor), each tensor should be of shape
+            [batch_size, class_count], class_count can vary on a per task basis, i.e.
+            outputs[i].shape[1] can be different to outputs[j].shape[1].
+        labels: tuple(torch.LongTensor), each tensor should be of shape [batch_size]
+        ks: tuple(int), compute accuracy at top-k for the values of k specified
+            in this parameter.
+    Returns:
+        tuple(float), same length at topk with the corresponding accuracy@k in.
+
+    This is implementation is referenced from
+    https://github.com/epic-kitchens/epic-kitchens-slowfast/blob/master/slowfast/utils/metrics.py
+    """
+
+    max_k = int(np.max(ks))
+    task_count = len(preds)
+    batch_size = labels[0].size(0)
+    all_correct = torch.zeros(max_k, batch_size).type(torch.ByteTensor)
+
+    if torch.cuda.is_available() and use_cuda:
+        all_correct = all_correct.cuda()
+    for output, label in zip(preds, labels):
+        _, max_k_idx = output.topk(max_k, dim=1, largest=True, sorted=True)
+        # Flip batch_size, class_count as .view doesn't work on non-contiguous
+        max_k_idx = max_k_idx.t()
+        correct_for_task = max_k_idx.eq(label.view(1, -1).expand_as(max_k_idx))
+        all_correct.add_(correct_for_task)
+
+    multitask_topks_correct = [
+        torch.ge(all_correct[:k].float().sum(0), task_count).float().sum(0) for k in ks
+    ]
+
+    return multitask_topks_correct
+
 
 def topk_errors(preds, labels, ks):
     """
@@ -64,3 +101,43 @@ def topk_accuracies(preds, labels, ks):
     """
     num_topks_correct = topks_correct(preds, labels, ks)
     return [(x / preds.size(0)) * 100.0 for x in num_topks_correct]
+
+def multitask_topk_accuracies(preds, labels, ks, use_cuda=True):
+    """
+    Computes the top-k accuracy for each k.
+    Args:
+        preds (array): array of predictions. Dimension is N.
+        labels (array): array of labels. Dimension is N.
+        ks (list): list of ks to calculate the top accuracies.
+    This is implementation is referenced from
+    https://github.com/epic-kitchens/epic-kitchens-slowfast/blob/master/slowfast/utils/metrics.py
+    """
+    num_multitask_topks_correct = multitask_topks_correct(preds, labels, ks, use_cuda)
+    return [(x / preds[0].size(0)) * 100.0 for x in num_multitask_topks_correct]
+
+#def topk_recall(preds, labels, k=5)
+
+
+def verb_noun_action_evaluations(preds, labels, ks, vi, ni, acc=True, recall=False):
+
+    def marginalize(probs, indexes):
+        mprobs = []
+        for ilist in indexes:
+            mprobs.append(probs[:, ilist].sum(1))
+        return np.array(mprobs).T
+
+    verb_preds = marginalize(preds, vi)
+    noun_preds = marginalize(preds, ni)
+
+    stats = {}
+    # labels = [verb, noun, action]
+    if acc:
+        stats['accuracy'] = {
+            'verb': topks_correct(verb_preds, labels[:, 0], ks),
+            'noun': topks_correct(noun_preds, labels[:, 1], ks),
+            'action': topks_correct(preds, labels[:, 2], ks)
+        }
+
+    elif recall:
+        raise NotImplementedError
+

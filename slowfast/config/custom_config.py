@@ -6,7 +6,7 @@
 
 def add_custom_config(_C):
     # Add your own customized configs.
-    _C.TRAIN.MULTI_TASK = False
+    _C.MULTI_TASK = False
     _C.TRAIN.FINETUNE = False
     _C.TRAIN.FINETUNE_EPOCH = 3
     return _C

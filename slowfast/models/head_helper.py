@@ -234,7 +234,6 @@ class ResNetMultiTaskHead(nn.Module):
         self,
         dim_in,
         num_classes,
-        num_intentions,
         pool_size,
         dropout_rate=0.0,
         act_func="softmax",
@@ -274,8 +273,14 @@ class ResNetMultiTaskHead(nn.Module):
             self.dropout = nn.Dropout(dropout_rate)
         # Perform FC in a fully convolutional manner. The FC layer will be
         # initialized with a different std comparing to convolutional layers.
-        self.projection = nn.Linear(sum(dim_in), num_classes, bias=True)
-        self.projection_intention = nn.Linear(sum(dim_in), num_intentions, bias=True)
+        if isinstance(num_classes, (list, tuple)):
+            #self.projection = nn.Linear(sum(dim_in), num_classes, bias=True)
+            #self.projection_intention = nn.Linear(sum(dim_in), num_intentions, bias=True)
+            self.projection_verb = nn.Linear(sum(dim_in), num_classes[0], bias=True)
+            self.projection_noun = nn.Linear(sum(dim_in), num_classes[1], bias=True)
+        else:
+            raise NotImplementedError
+        self.num_classes = num_classes
 
         # Softmax for evaluation and testing.
         if act_func == "softmax":
@@ -303,15 +308,31 @@ class ResNetMultiTaskHead(nn.Module):
         # Perform dropout.
         if hasattr(self, "dropout"):
             x = self.dropout(x)
-        predictions = self.projection(x)
-        intentions = self.projection_intention(x)
+
+        # if isinstance(self.num_classes, (list, tuple)):
+        x_verb = self.projection_verb(x)
+        x_noun = self.projection_noun(x)
+        #predictions = self.projection(x)
+        #intentions = self.projection_intention(x)
+
+        # Performs fully convlutional inference.
+        #if not self.training:
+        #    predictions = self.act(predictions)
+        #    predictions = predictions.mean([1, 2, 3])
+        #    intentions = self.act(intentions)
+        #    intentions = intentions.mean([1,2,3])
+        #intentions = intentions.view(intentions.shape[0], -1)
+        #predictions = predictions.view(predictions.shape[0], -1)
+        #return [predictions, intentions]
 
         # Performs fully convlutional inference.
         if not self.training:
-            predictions = self.act(predictions)
-            predictions = predictions.mean([1, 2, 3])
-            intentions = self.act(intentions)
-            intentions = intentions.mean([1,2,3])
-        intentions = intentions.view(intentions.shape[0], -1)
-        predictions = predictions.view(predictions.shape[0], -1)
-        return [predictions, intentions]
+            x_verb = self.act(x_verb)
+            x_verb = x_verb.mean([1, 2, 3])
+
+            x_noun = self.act(x_noun)
+            x_noun = x_noun.mean([1, 2, 3])
+        x_verb = x_verb.view(x_verb.shape[0], -1)
+        x_noun = x_noun.view(x_noun.shape[0], -1)
+        return (x_verb, x_noun)
+

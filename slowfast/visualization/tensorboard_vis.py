@@ -115,13 +115,13 @@ class TensorboardWriter(object):
             cmtx = None
             if self.cfg.TENSORBOARD.CONFUSION_MATRIX.ENABLE:
                 cmtx = vis_utils.get_confusion_matrix(
-                    preds, labels, self.cfg.MODEL.NUM_CLASSES
+                    preds, labels, self.cfg.MODEL.NUM_CLASSES[0]
                 )
                 # Add full confusion matrix.
                 add_confusion_matrix(
                     self.writer,
                     cmtx,
-                    self.cfg.MODEL.NUM_CLASSES,
+                    self.cfg.MODEL.NUM_CLASSES[0],
                     global_step=global_step,
                     class_names=self.class_names,
                     figsize=self.cm_figsize,
@@ -148,7 +148,7 @@ class TensorboardWriter(object):
                     add_confusion_matrix(
                         self.writer,
                         cmtx,
-                        self.cfg.MODEL.NUM_CLASSES,
+                        self.cfg.MODEL.NUM_CLASSES[0],
                         global_step=global_step,
                         subset_ids=self.cm_subset_classes,
                         class_names=self.class_names,
@@ -167,7 +167,7 @@ class TensorboardWriter(object):
                         add_confusion_matrix(
                             self.writer,
                             cmtx,
-                            self.cfg.MODEL.NUM_CLASSES,
+                            self.cfg.MODEL.NUM_CLASSES[0],
                             global_step=global_step,
                             subset_ids=children_ls,
                             class_names=self.class_names,
@@ -177,12 +177,12 @@ class TensorboardWriter(object):
             if self.cfg.TENSORBOARD.HISTOGRAM.ENABLE:
                 if cmtx is None:
                     cmtx = vis_utils.get_confusion_matrix(
-                        preds, labels, self.cfg.MODEL.NUM_CLASSES
+                        preds, labels, self.cfg.MODEL.NUM_CLASSES[0]
                     )
                 plot_hist(
                     self.writer,
                     cmtx,
-                    self.cfg.MODEL.NUM_CLASSES,
+                    self.cfg.MODEL.NUM_CLASSES[0],
                     self.cfg.TENSORBOARD.HISTOGRAM.TOPK,
                     global_step=global_step,
                     subset_ids=self.hist_subset_classes,

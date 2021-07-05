@@ -17,6 +17,7 @@ import slowfast.visualization.tensorboard_vis as tb
 from slowfast.datasets import loader
 from slowfast.models import build_model
 from slowfast.utils.meters import AVAMeter, TestMeter
+from slowfast.utils.mtl_meters import MTLTestMeter
 
 logger = logging.get_logger(__name__)
 
@@ -59,6 +60,8 @@ def perform_test(test_loader, model, test_meter, cfg, writer=None):
             if isinstance(labels, (list,)):
                 for i in range(len(labels)):
                     labels[i] = labels[i].cuda(non_blocking=True)
+            elif isinstance(labels, (dict, )):
+                labels = {k: v.cuda() for k, v in labels.items()}
             else:
                 labels = labels.cuda()
             video_idx = video_idx.cuda()
@@ -94,64 +97,85 @@ def perform_test(test_loader, model, test_meter, cfg, writer=None):
             test_meter.log_iter_stats(None, cur_iter)
         else:
             # Perform the forward pass.
-            if not cfg.TRAIN.MULTI_TASK:
-                preds = model(inputs)
-                # TO DO: modify for verb, noun, action setup
-                if len(labels.shape) == 2:
+            preds = model(inputs)
+
+            # TO DO: modify for verb, noun, action setup
+            if cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy':
+                if len(labels.shape) == 2: # For vnmce setup
                     labels = labels[:, -1]
-            else:
-                preds, int_preds = model(inputs)
-                labels, int_labels = labels
 
-            # Gather all the predictions across all the devices to perform ensemble.
-            if cfg.NUM_GPUS > 1:
-                preds, labels, video_idx = du.all_gather(
-                    [preds, labels, video_idx]
-                )
-                if cfg.TRAIN.MULTI_TASK:
-                    int_preds, int_labels = du.all_gather([int_preds, int_labels])
-            if cfg.NUM_GPUS:
-                preds = preds.cpu()
-                labels = labels.cpu()
-                video_idx = video_idx.cpu()
-                if cfg.TRAIN.MULTI_TASK:
-                    int_preds = int_preds.cpu()
-                    int_labels = int_labels.cpu()
+            if not cfg.MULTI_TASK:
+                # Gather all the predictions across all the devices to perform ensemble.
+                if cfg.NUM_GPUS > 1:
+                    preds, labels, video_idx = du.all_gather(
+                        [preds, labels, video_idx]
+                    )
+                if cfg.NUM_GPUS:
+                    preds = preds.cpu()
+                    labels = labels.cpu()
+                    video_idx = video_idx.cpu()
 
-            test_meter.iter_toc()
-            # Update and log stats.
-            if not cfg.TRAIN.MULTI_TASK:
+                test_meter.iter_toc()
+                # Update and log stats.
                 test_meter.update_stats(
                     preds.detach(), labels.detach(), video_idx.detach()
                 )
-            else:
+                test_meter.log_iter_stats(cur_iter)
+
+            else: # multitask
+                # Gather all the predictions across all the devices to perform ensemble.
+                if cfg.NUM_GPUS > 1:
+                    verb_preds, verb_labels, video_idx = du.all_gather(
+                        [preds[0], labels['verb'], video_idx]
+                    )
+                    noun_preds, noun_labels = du.all_gather(
+                        [preds[1], labels['noun']]
+                    )
+
+                    #meta = du.all_gather_unaligned(meta)
+                    #du.all_gather_unaligned(meta)
+                    #for i in range(len(meta)):
+                    #    metadata['narration_id'].extend(meta[i]['narration_id'])
+
+                if cfg.NUM_GPUS:
+                    verb_preds = preds[0].cpu()
+                    verb_labels = labels['verb'].cpu()
+                    noun_preds = preds[1].cpu()
+                    noun_labels = labels['noun'].cpu()
+                    video_idx = video_idx.cpu()
+                    #metatdata = meta.cpu()
+
+                test_meter.iter_toc()
+                # Update and log stats.
                 test_meter.update_stats(
-                    preds.detach(), labels.detach(), video_idx.detach(), int_preds.detach(), int_labels.detach()
+                    (verb_preds.detach(), noun_preds.detach()),
+                    (verb_labels.detach(), noun_labels.detach()),
+                    video_idx.detach(),
+                    #metadata = metatdata.detach(),
                 )
-            test_meter.log_iter_stats(cur_iter)
+                test_meter.log_iter_stats(cur_iter)
 
         test_meter.iter_tic()
 
     # Log epoch stats and print the final testing results.
     if not cfg.DETECTION.ENABLE:
-        all_preds = test_meter.video_preds.clone().detach()
-        all_labels = test_meter.video_labels
-        if cfg.TRAIN.MULTI_TASK:
-            all_int_preds = test_meter.video_int_preds.clone().detach()
-            all_int_labels = test_meter.video_int_labels
 
-        if cfg.NUM_GPUS:
-            all_preds = all_preds.cpu()
-            all_labels = all_labels.cpu()
-            if cfg.TRAIN.MULTI_TASK:
-                all_int_preds = all_int_preds.cpu()
-                all_int_labels = all_int_labels.cpu()
+        if not cfg.MULTI_TASK:
+            all_preds = test_meter.video_preds.clone().detach()
+            all_labels = test_meter.video_labels
 
+            if cfg.NUM_GPUS:
+                all_preds = all_preds.cpu()
+                all_labels = all_labels.cpu()
+        #else:
+
+
+        # Plot Visualization Figure (e.g. Confusion Matrix)
         if writer is not None:
-            if not cfg.TRAIN.MULTI_TASK:
+            if not cfg.MULTI_TASK:
                 writer.plot_eval(preds=all_preds, labels=all_labels)
-            else:
-                writer.plot_eval(preds=all_preds, labels=all_labels, int_preds=all_int_preds, int_labels=all_int_labels)
+            #else: #TO DO: plot action? result
+                #writer.plot_eval(preds=all_preds, labels=all_labels, int_preds=all_int_preds, int_labels=all_int_labels)
 
         if cfg.TEST.SAVE_RESULTS_PATH != "":
             save_path = os.path.join(cfg.OUTPUT_DIR, cfg.TEST.SAVE_RESULTS_PATH)
@@ -164,6 +188,8 @@ def perform_test(test_loader, model, test_meter, cfg, writer=None):
             )
 
     test_meter.finalize_metrics()
+    #if write result for epickitchen test json
+    #preds, labels, metatdata = test_meter.finalize_metrics()
     test_meter.reset()
 
 
@@ -208,16 +234,26 @@ def test(cfg):
             == 0
         )
         # Create meters for multi-view testing.
-        test_meter = TestMeter(
-            len(test_loader.dataset)
-            // (cfg.TEST.NUM_ENSEMBLE_VIEWS * cfg.TEST.NUM_SPATIAL_CROPS),
-            cfg.TEST.NUM_ENSEMBLE_VIEWS * cfg.TEST.NUM_SPATIAL_CROPS,
-            cfg.MODEL.NUM_CLASSES,
-            len(test_loader),
-            cfg.DATA.MULTI_LABEL,
-            cfg.DATA.ENSEMBLE_METHOD,
-            cfg.TRAIN.MULTI_TASK,
-        )
+        if cfg.MULTI_TASK:
+            test_meter = MTLTestMeter(
+                len(test_loader.dataset)
+                // (cfg.TEST.NUM_ENSEMBLE_VIEWS * cfg.TEST.NUM_SPATIAL_CROPS),
+                cfg.TEST.NUM_ENSEMBLE_VIEWS * cfg.TEST.NUM_SPATIAL_CROPS,
+                cfg.MODEL.NUM_CLASSES,
+                len(test_loader),
+                cfg.DATA.MULTI_LABEL,
+                cfg.DATA.ENSEMBLE_METHOD,
+            )
+        else:
+            test_meter = TestMeter(
+                len(test_loader.dataset)
+                // (cfg.TEST.NUM_ENSEMBLE_VIEWS * cfg.TEST.NUM_SPATIAL_CROPS),
+                cfg.TEST.NUM_ENSEMBLE_VIEWS * cfg.TEST.NUM_SPATIAL_CROPS,
+                cfg.MODEL.NUM_CLASSES[0],
+                len(test_loader),
+                cfg.DATA.MULTI_LABEL,
+                cfg.DATA.ENSEMBLE_METHOD,
+            )
 
     # Set up writer for logging to Tensorboard format.
     if cfg.TENSORBOARD.ENABLE and du.is_master_proc(

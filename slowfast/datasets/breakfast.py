@@ -91,13 +91,13 @@ class Breakfast(torch.utils.data.Dataset):
                 cfg.TEST.NUM_ENSEMBLE_VIEWS * cfg.TEST.NUM_SPATIAL_CROPS
             )
         logger.info("Constructing Breakfast {}...".format(mode))
-        if cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy':
+        if cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy' or cfg.MULTI_TASK:
             self.vn_label = True
             self.actions = pd.read_csv('/work/r08944003/Breakfast/actions.csv', index_col='id')
         else:
             self.vn_label = False
-        if self.vn_label and cfg.TRAIN.MULTI_TASK:
-            raise NotImplementedError
+        #if self.vn_label and cfg.MULTI_TASK:
+        #    raise NotImplementedError
 
         self._construct_loader()
     def _construct_loader(self):
@@ -140,16 +140,28 @@ class Breakfast(torch.utils.data.Dataset):
                     self._path_to_images.append(
                         os.path.join(data_path_prefix, row["path"])
                     )
-                    #if self.mode == 'train' and self.cfg.TRAIN.MULTI_TASK:
-                    if self.cfg.TRAIN.MULTI_TASK:
-                        self._labels.append((int(row['label'])-1, int(row['intention_label'])))
-                    else:
-                        action = int(row['label'])-1
-                        if self.vn_label:
-                            vn = self.actions.iloc[action][['verb', 'noun']].values.astype(int)
+                    #if self.mode == 'train' and self.cfg.MULTI_TASK:
+                    #if self.cfg.MULTI_TASK:
+                    #    self._labels.append((int(row['label'])-1, int(row['intention_label'])))
+                    #else:
+                    #    action = int(row['label'])-1
+                    #    if self.vn_label:
+                    #        vn = self.actions.iloc[action][['verb', 'noun']].values.astype(int)
+                    #        self._labels.append(np.append(vn, action))
+                    #    else:
+                    #        self._labels.append(action)
+
+                    action = int(row['label'])-1
+                    if self.vn_label:
+                        vn = self.actions.iloc[action][['verb', 'noun']].values.astype(int)
+
+                        if self.cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy':
                             self._labels.append(np.append(vn, action))
-                        else:
-                            self._labels.append(action)
+                        elif self.cfg.MULTI_TASK:
+                            self._labels.append({'verb': vn[0], 'noun': vn[1]})
+                    else:
+                        self._labels.append(action)
+
                     self._spatial_temporal_idx.append(idx)
         assert (
             len(self._path_to_images) > 0
