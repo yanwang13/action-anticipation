@@ -9,4 +9,5 @@ def add_custom_config(_C):
     _C.MULTI_TASK = False
     _C.TRAIN.FINETUNE = False
     _C.TRAIN.FINETUNE_EPOCH = 3
+    _C.TRAIN.SAVE_CKPT_THRES = 77.0
     return _C

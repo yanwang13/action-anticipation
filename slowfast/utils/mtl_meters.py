@@ -449,6 +449,8 @@ class MTLValMeter(object):
         self.all_preds = []
         self.all_labels = []
 
+        self.save_ckpt_thres = cfg.TRAIN.SAVE_CKPT_THRES
+
     def reset(self):
         """
         Reset the Meter.
@@ -551,8 +553,8 @@ class MTLValMeter(object):
 
         #self.min_top1_err = min(self.min_top1_err, top1_err)
         if top1_err < self.min_top1_err['action']:
-            save_ckpts = True
             self.min_top1_err['action'] = top1_err
+            save_ckpts = True if self.min_top1_err['action'] < self.save_ckpt_thres else False
         else:
             save_ckpts = False
         self.min_top5_err['action'] = min(self.min_top5_err['action'], top5_err)

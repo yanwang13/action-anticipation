@@ -648,6 +648,7 @@ class ValMeter(object):
         self.all_preds = []
         self.all_labels = []
 
+        self.save_ckpt_thres = cfg.TRAIN.SAVE_CKPT_THRES
         #if cfg.MULTI_TASK:
         #    self.multitask = True
         #    self.num_int_top1_mis = 0
@@ -768,8 +769,9 @@ class ValMeter(object):
             top5_err = self.num_top5_mis / self.num_samples
             #self.min_top1_err = min(self.min_top1_err, top1_err)
             if top1_err < self.min_top1_err:
-                save_ckpts = True
                 self.min_top1_err = top1_err
+                save_ckpts = True if self.min_top1_err < self.save_ckpt_thres else False
+                #logger.info(f"save_ckpts:{save_ckpts}, min_top1_err:{self.min_top1_err}, save_ckpt_thres:{self.save_ckpt_thres}")
             else:
                 save_ckpts = False
             self.min_top5_err = min(self.min_top5_err, top5_err)
