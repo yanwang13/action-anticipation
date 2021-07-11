@@ -1,4 +1,7 @@
-
+"""
+This is implementation is referenced from
+https://github.com/epic-kitchens/epic-kitchens-slowfast/blob/master/slowfast/datasets/video_record.py
+"""
 class VideoRecord(object):
     def __init__(self, row):
         self._data = row

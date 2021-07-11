@@ -1,3 +1,7 @@
+"""
+This is implementation is referenced from
+https://github.com/epic-kitchens/epic-kitchens-slowfast/blob/master/slowfast/datasets/epickitchens_record.py
+"""
 from .video_record import VideoRecord
 from datetime import timedelta
 import time

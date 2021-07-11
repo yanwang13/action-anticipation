@@ -1,3 +1,7 @@
+"""
+ This is implementation is referenced from
+ https://github.com/epic-kitchens/epic-kitchens-slowfast/blob/master/slowfast/datasets/epickitchens.py
+"""
 import os
 import pandas as pd
 import torch
