@@ -91,11 +91,11 @@ class Breakfast(torch.utils.data.Dataset):
                 cfg.TEST.NUM_ENSEMBLE_VIEWS * cfg.TEST.NUM_SPATIAL_CROPS
             )
         logger.info("Constructing Breakfast {}...".format(mode))
-        if cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy' or cfg.MULTI_TASK:
-            self.vn_label = True
-            self.actions = pd.read_csv('/work/r08944003/Breakfast/actions.csv', index_col='id')
-        else:
-            self.vn_label = False
+        #if cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy' or cfg.MULTI_TASK:
+        #    self.vn_label = True
+        self.actions = pd.read_csv('/work/r08944003/Breakfast/actions.csv', index_col='id')
+        #else:
+        #    self.vn_label = False
         #if self.vn_label and cfg.MULTI_TASK:
         #    raise NotImplementedError
 
@@ -152,15 +152,19 @@ class Breakfast(torch.utils.data.Dataset):
                     #        self._labels.append(action)
 
                     action = int(row['label'])-1
-                    if self.vn_label:
-                        vn = self.actions.iloc[action][['verb', 'noun']].values.astype(int)
+                    label = {'verb': self.actions.iloc[action]['verb'],
+                             'noun': self.actions.iloc[action]['noun'],
+                             'action': action}
+                    self._labels.append(label)
+                    #if self.vn_label:
+                    #    vn = self.actions.iloc[action][['verb', 'noun']].values.astype(int)
 
-                        if self.cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy':
-                            self._labels.append(np.append(vn, action))
-                        elif self.cfg.MULTI_TASK:
-                            self._labels.append({'verb': vn[0], 'noun': vn[1]})
-                    else:
-                        self._labels.append(action)
+                    #    if self.cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy':
+                    #        self._labels.append(np.append(vn, action))
+                    #    elif self.cfg.MULTI_TASK:
+                    #        self._labels.append({'verb': vn[0], 'noun': vn[1]})
+                    #else:
+                    #    self._labels.append(action)
 
                     self._spatial_temporal_idx.append(idx)
         assert (
@@ -237,10 +241,13 @@ class Breakfast(torch.utils.data.Dataset):
         #frames = decoder.temporal_sampling(frames, 0, len(frames), self.cfg.DATA.NUM_FRAMES)
         #frames = temporal_sampling(frames, start_inx, end_inx, num_frames) #call function from slowfast/datasets/decoder.py
         # Perform color normalization.
-        frames = frames.float()
-        frames = frames / 255.0
-        frames = frames - torch.tensor([0.485, 0.456, 0.406])
-        frames = frames / torch.tensor([0.229, 0.224, 0.225])
+        #frames = frames.float()
+        #frames = frames / 255.0
+        #frames = frames - torch.tensor([0.485, 0.456, 0.406])
+        #frames = frames / torch.tensor([0.229, 0.224, 0.225])
+        frames = utils.tensor_normalize(
+            frames, self.cfg.DATA.MEAN, self.cfg.DATA.STD
+        )
         # T H W C -> C T H W.
         frames = frames.permute(3, 0, 1, 2)
         # Perform data augmentation.

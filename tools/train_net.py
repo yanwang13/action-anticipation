@@ -63,12 +63,14 @@ def train_epoch(
                 labels = {k: v.cuda() for k, v in labels.items()}
             else:
                 labels = labels.cuda()
-            for key, val in meta.items():
-                if isinstance(val, (list,)):
-                    for i in range(len(val)):
-                        val[i] = val[i].cuda(non_blocking=True)
-                else:
-                    meta[key] = val.cuda(non_blocking=True)
+
+            if cfg.DETECTION.ENABLE:
+                for key, val in meta.items():
+                    if isinstance(val, (list,)):
+                        for i in range(len(val)):
+                            val[i] = val[i].cuda(non_blocking=True)
+                    else:
+                        meta[key] = val.cuda(non_blocking=True)
 
         # Update the learning rate.
         lr = optim.get_epoch_lr(cur_epoch + float(cur_iter) / data_size, cfg)
@@ -96,9 +98,9 @@ def train_epoch(
             loss_noun = loss_fun(preds[1], labels['noun'])
             loss = 0.5*(loss_verb+loss_noun)
         else:
-            loss = loss_fun(preds, labels)
-            if len(labels.shape) == 2: # for vnmce loss to calcuate action acc
-                labels = labels[:, -1]
+            loss = loss_fun(preds, labels['action'])
+            #if len(labels.shape) == 2: # for vnmce loss to calcuate action acc
+            #    labels = labels[:, -1]
 
         # check Nan Loss.
         misc.check_nan_losses(loss)
@@ -185,7 +187,7 @@ def train_epoch(
                     )
 
                 else:
-                    num_topks_correct = metrics.topks_correct(preds, labels, (1, 5))
+                    num_topks_correct = metrics.topks_correct(preds, labels['action'], (1, 5))
                     top1_err, top5_err = [
                         (1.0 - x / preds.size(0)) * 100.0 for x in num_topks_correct
                     ]
@@ -292,15 +294,14 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
                 labels = {k: v.cuda() for k, v in labels.items()}
             else:
                 labels = labels.cuda()
-                if cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy':
-                    labels = labels[:, -1]
 
-            for key, val in meta.items():
-                if isinstance(val, (list,)):
-                    for i in range(len(val)):
-                        val[i] = val[i].cuda(non_blocking=True)
-                else:
-                    meta[key] = val.cuda(non_blocking=True)
+            if cfg.DETECTION.ENABLE:
+                for key, val in meta.items():
+                    if isinstance(val, (list,)):
+                        for i in range(len(val)):
+                            val[i] = val[i].cuda(non_blocking=True)
+                    else:
+                        meta[key] = val.cuda(non_blocking=True)
 
         if cfg.DETECTION.ENABLE:
             # Compute the predictions.
@@ -375,7 +376,8 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
                     )
 
                 else: # model with only one output
-                    num_topks_correct = metrics.topks_correct(preds, labels, (1, 5))
+                    num_topks_correct = metrics.topks_correct(preds, labels['action'], (1, 5))
+                    #num_topks_correct = metrics.topks_correct(preds, labels, (1, 5))
 
                     # Compute the errors across the GPUs
                     top1_err, top5_err = [
@@ -411,7 +413,8 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
             #    preds = preds[0]
             #    labels = labels[0]
             if not cfg.MULTI_TASK:
-                val_meter.update_predictions(preds, labels)
+                val_meter.update_predictions(preds, labels['action'])
+                #val_meter.update_predictions(preds, labels)
             else:
                 pass
 
