@@ -23,12 +23,13 @@ from slowfast.utils.meters import AVAMeter, TrainMeter, ValMeter
 from slowfast.utils.mtl_meters import MTLTrainMeter, MTLValMeter
 from slowfast.utils.vna_meters import Verb_Noun_Action_ValMeter
 from slowfast.utils.multigrid import MultigridSchedule
+from slowfast.models.uncertainty_loss import Uncertaintyloss
 
 logger = logging.get_logger(__name__)
 
 
 def train_epoch(
-    train_loader, model, optimizer, train_meter, cur_epoch, cfg, writer=None, lamb=1
+    train_loader, model, optimizer, train_meter, cur_epoch, cfg, writer=None, lamb=1, criterion=None
 ):
     """
     Perform the video training for one epoch.
@@ -87,7 +88,8 @@ def train_epoch(
             # Perform the forward pass.
             preds = model(inputs)
         # Explicitly declare reduction to mean.
-        loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
+        if criterion is None:
+            loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
         if cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy':
             actions = pd.read_csv(os.path.join(cfg.DATA.PATH_TO_DATA_DIR, 'actions.csv'))
             vi = misc.get_marginal_indexes(actions, 'verb')
@@ -97,16 +99,16 @@ def train_epoch(
         # Compute the loss.
         # print(f'preds shape: {preds.shape}, labels shape: {labels.shape}')
         if cfg.MULTI_TASK:
-            #loss = loss_fun(preds[0], labels[0]) + lamb*loss_fun(preds[1], labels[1])
-            loss_verb = loss_fun(preds[0], labels['verb'])
-            loss_noun = loss_fun(preds[1], labels['noun'])
-            loss = 0.5*(loss_verb+loss_noun)
+            if cfg.UNCERTAINTY: # Use uncertainty loss
+                loss, loss_verb, loss_noun = criterion(preds, [labels['verb'], labels['noun']])
+            else:
+                loss_verb = loss_fun(preds[0], labels['verb'])
+                loss_noun = loss_fun(preds[1], labels['noun'])
+                loss = 0.5*(loss_verb+loss_noun)
         elif cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy':
             loss = loss_fun(preds, torch.stack([labels['verb'], labels['noun'], labels['action']], 1))
         else:
             loss = loss_fun(preds, labels['action'])
-            #if len(labels.shape) == 2: # for vnmce loss to calcuate action acc
-            #    labels = labels[:, -1]
 
         # check Nan Loss.
         misc.check_nan_losses(loss)
@@ -258,10 +260,28 @@ def train_epoch(
                         },
                         global_step=data_size * cur_epoch + cur_iter,
                     )
+#                    if cfg.UNCERTAINTY and writer is not None:
+#                        verb_weight, noun_weight = criterion.get_weights()
+#                        writer.add_scalars(
+#                            {
+#                                "Train/verb_weight": verb_weight,
+#                                "Train/noun_weight": noun_weight,
+#                            },
+#                            global_step=data_size * cur_epoch + cur_iter,
+#                        )
         train_meter.log_iter_stats(cur_epoch, cur_iter)
         train_meter.iter_tic()
 
     # Log epoch stats.
+    if cfg.UNCERTAINTY and writer is not None:
+        verb_weight, noun_weight = criterion.get_weights()
+        writer.add_scalars(
+            {
+                "Train/verb_weight": verb_weight,
+                "Train/noun_weight": noun_weight,
+            },
+            global_step = cur_epoch,
+        )
     train_meter.log_epoch_stats(cur_epoch, writer)
     train_meter.reset()
 
@@ -564,8 +584,17 @@ def train(cfg):
     if du.is_master_proc() and cfg.LOG_MODEL_INFO:
         misc.log_model_info(model, cfg, use_train_input=True)
 
-    # Construct the optimizer.
-    optimizer = optim.construct_optimizer(model, cfg=cfg)
+    if cfg.UNCERTAINTY:
+        #criterion = Uncertaintyloss().to(torch.cuda.current_device())
+        if cfg.NUM_GPUS <= 1:
+            criterion = Uncertaintyloss().to(next(model.parameters()).device)
+        else:
+            raise ValueError
+        optimizer = optim.construct_optimizer(model, criterion, cfg)
+    else:
+        criterion = None
+        # Construct the optimizer.
+        optimizer = optim.construct_optimizer(model, cfg=cfg)
 
     # Load a checkpoint to resume training if applicable.
     start_epoch = cu.load_train_checkpoint(cfg, model, optimizer)
@@ -646,7 +675,7 @@ def train(cfg):
 
         # Train for one epoch.
         train_epoch(
-            train_loader, model, optimizer, train_meter, cur_epoch, cfg, writer
+            train_loader, model, optimizer, train_meter, cur_epoch, cfg, writer, criterion=criterion
         )
 
         # Compute precise BN stats.

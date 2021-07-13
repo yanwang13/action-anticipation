@@ -8,7 +8,7 @@ import torch
 import slowfast.utils.lr_policy as lr_policy
 
 
-def construct_optimizer(model, cfg):
+def construct_optimizer(model, uncertainty_loss=None, cfg=None):
     """
     Construct a stochastic gradient descent or ADAM optimizer with momentum.
     Details can be found in:
@@ -40,6 +40,10 @@ def construct_optimizer(model, cfg):
         {"params": bn_params, "weight_decay": cfg.BN.WEIGHT_DECAY},
         {"params": non_bn_parameters, "weight_decay": cfg.SOLVER.WEIGHT_DECAY},
     ]
+
+    if uncertainty_loss is not None:
+        optim_params.append({"params": uncertainty_loss.parameters()})
+
     # Check all parameters will be passed into optimizer.
     assert len(list(model.parameters())) == len(non_bn_parameters) + len(
         bn_params
