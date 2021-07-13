@@ -91,13 +91,10 @@ class Breakfast(torch.utils.data.Dataset):
                 cfg.TEST.NUM_ENSEMBLE_VIEWS * cfg.TEST.NUM_SPATIAL_CROPS
             )
         logger.info("Constructing Breakfast {}...".format(mode))
-        #if cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy' or cfg.MULTI_TASK:
-        #    self.vn_label = True
-        self.actions = pd.read_csv('/work/r08944003/Breakfast/actions.csv', index_col='id')
-        #else:
-        #    self.vn_label = False
-        #if self.vn_label and cfg.MULTI_TASK:
-        #    raise NotImplementedError
+
+        action_csv_path = os.path.join(self.cfg.DATA.PATH_TO_DATA_DIR, 'actions.csv')
+        self.actions = pd.read_csv(action_csv_path)
+        logger.info(f'Reading action info from {action_csv_path}')
 
         self._construct_loader()
     def _construct_loader(self):
@@ -140,16 +137,6 @@ class Breakfast(torch.utils.data.Dataset):
                     self._path_to_images.append(
                         os.path.join(data_path_prefix, row["path"])
                     )
-                    #if self.mode == 'train' and self.cfg.MULTI_TASK:
-                    #if self.cfg.MULTI_TASK:
-                    #    self._labels.append((int(row['label'])-1, int(row['intention_label'])))
-                    #else:
-                    #    action = int(row['label'])-1
-                    #    if self.vn_label:
-                    #        vn = self.actions.iloc[action][['verb', 'noun']].values.astype(int)
-                    #        self._labels.append(np.append(vn, action))
-                    #    else:
-                    #        self._labels.append(action)
 
                     action = int(row['label'])-1
                     label = {'verb': self.actions.iloc[action]['verb'],

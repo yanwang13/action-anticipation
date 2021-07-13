@@ -148,7 +148,7 @@ class Epickitchens(torch.utils.data.Dataset):
 
         # read verb noun action pair csv
         action_csv_path = os.path.join(self.cfg.DATA.PATH_TO_DATA_DIR, 'actions.csv')
-        self.actions = pd.read_csv(os.path.join(action_csv_path))
+        self.actions = pd.read_csv(action_csv_path)
         logger.info(f'Reading action info from {action_csv_path}')
 
         if self.ek_version=="55":
