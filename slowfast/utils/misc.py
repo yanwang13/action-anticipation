@@ -24,7 +24,7 @@ from slowfast.models.batchnorm_helper import SubBatchNorm3d
 logger = logging.get_logger(__name__)
 
 
-def get_marginal_indexes(mode):
+def get_marginal_indexes(actions, mode):
     """
     This is implementation is referenced from
     https://github.com/fpv-iplab/action-anticipation-losses/blob/master/MarginalCrossEntropyLoss/MarginalCrossEntropyLoss.py
@@ -36,8 +36,8 @@ def get_marginal_indexes(mode):
             a list of numpy array of indexes. If verb/noun 3 is contained in actions 2,8,19,
             then output[3] will be np.array([2,8,19])
     """
-    # TO DO: the file can be modified by config
-    actions=pd.read_csv('/work/r08944003/Breakfast/actions.csv',index_col='id')
+    #logger.info(f'Getting action indexes for {mode}')
+
     vi = []
     for v in range(actions[mode].max()+1):
         vals=actions[actions[mode]==v].index.values
@@ -46,6 +46,13 @@ def get_marginal_indexes(mode):
         else:
             vi.append(np.array([0]))
     return vi
+
+def marginalize(probs, indexes):
+    mprobs = []
+    for ilist in indexes:
+        mprobs.append(probs[:, ilist].sum(1))
+    return torch.t(torch.stack(mprobs))
+    #return np.array(mprobs).T
 
 def check_nan_losses(loss):
     """

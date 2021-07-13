@@ -141,3 +141,6 @@ def verb_noun_action_evaluations(preds, labels, ks, vi, ni, acc=True, recall=Fal
     elif recall:
         raise NotImplementedError
 
+
+#def verb_noun_topks_correct(preds, labels, ks):
+

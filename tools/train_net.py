@@ -2,7 +2,9 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 
 """Train a video classification model."""
+import os
 import numpy as np
+import pandas as pd
 import pprint
 import torch
 from fvcore.nn.precise_bn import get_bn_modules, update_bn_stats
@@ -19,6 +21,7 @@ from slowfast.datasets import loader
 from slowfast.models import build_model, set_finetune_mode
 from slowfast.utils.meters import AVAMeter, TrainMeter, ValMeter
 from slowfast.utils.mtl_meters import MTLTrainMeter, MTLValMeter
+from slowfast.utils.vna_meters import Verb_Noun_Action_ValMeter
 from slowfast.utils.multigrid import MultigridSchedule
 
 logger = logging.get_logger(__name__)
@@ -86,8 +89,9 @@ def train_epoch(
         # Explicitly declare reduction to mean.
         loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
         if cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy':
-            vi = misc.get_marginal_indexes('verb')
-            ni = misc.get_marginal_indexes('noun')
+            actions = pd.read_csv(os.path.join(cfg.DATA.PATH_TO_DATA_DIR, 'actions.csv'))
+            vi = misc.get_marginal_indexes(actions, 'verb')
+            ni = misc.get_marginal_indexes(actions, 'noun')
             loss_fun.add_marginal_masks([vi, ni], cfg.MODEL.NUM_CLASSES[0])
 
         # Compute the loss.
@@ -97,6 +101,8 @@ def train_epoch(
             loss_verb = loss_fun(preds[0], labels['verb'])
             loss_noun = loss_fun(preds[1], labels['noun'])
             loss = 0.5*(loss_verb+loss_noun)
+        elif cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy':
+            loss = loss_fun(preds, torch.stack([labels['verb'], labels['noun'], labels['action']], 1))
         else:
             loss = loss_fun(preds, labels['action'])
             #if len(labels.shape) == 2: # for vnmce loss to calcuate action acc
@@ -204,6 +210,7 @@ def train_epoch(
                         top1_err.item(),
                         top5_err.item(),
                     )
+
 
             train_meter.iter_toc()
             # Update and log stats.
@@ -413,8 +420,10 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
             #    preds = preds[0]
             #    labels = labels[0]
             if not cfg.MULTI_TASK:
-                val_meter.update_predictions(preds, labels['action'])
-                #val_meter.update_predictions(preds, labels)
+                if cfg.LOG_VERB_NOUN:
+                    val_meter.update_predictions(preds, labels)
+                else:
+                    val_meter.update_predictions(preds, labels['action'])
             else:
                 pass
 
@@ -423,9 +432,6 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
 
     # Log epoch stats.
     save_current_ckpts, best_err = val_meter.log_epoch_stats(cur_epoch, writer)
-    # Save the checkpoint of the best result
-    #if save_current_ckpts:
-    #    cu.save_checkpoint(cfg.OUTPUT_DIR, model, optimizer, cur_epoch, cfg, best_err)
 
     # write to tensorboard format if available.
     if writer is not None:
@@ -503,7 +509,7 @@ def build_trainer(cfg):
         misc.log_model_info(model, cfg, use_train_input=True)
 
     # Construct the optimizer.
-    optimizer = optim.construct_optimizer(model, cfg)
+    optimizer = optim.construct_optimizer(model, cfg=cfg)
 
     # Create the video train and val loaders.
     train_loader = loader.construct_loader(cfg, "train")
@@ -559,7 +565,7 @@ def train(cfg):
         misc.log_model_info(model, cfg, use_train_input=True)
 
     # Construct the optimizer.
-    optimizer = optim.construct_optimizer(model, cfg)
+    optimizer = optim.construct_optimizer(model, cfg=cfg)
 
     # Load a checkpoint to resume training if applicable.
     start_epoch = cu.load_train_checkpoint(cfg, model, optimizer)
@@ -579,6 +585,15 @@ def train(cfg):
         if cfg.MULTI_TASK:
             train_meter = MTLTrainMeter(len(train_loader), cfg)
             val_meter = MTLValMeter(len(val_loader), cfg)
+        elif cfg.LOG_VERB_NOUN:
+            action_csv_path = os.path.join(cfg.DATA.PATH_TO_DATA_DIR, 'actions.csv')
+            actions = pd.read_csv(os.path.join(action_csv_path))
+            logger.info(f'Reading action info from {action_csv_path}')
+            vi = misc.get_marginal_indexes(actions, 'verb')
+            ni = misc.get_marginal_indexes(actions, 'noun')
+
+            train_meter = TrainMeter(len(train_loader), cfg)
+            val_meter = Verb_Noun_Action_ValMeter(len(val_loader), cfg, vi, ni)
         else:
             train_meter = TrainMeter(len(train_loader), cfg)
             val_meter = ValMeter(len(val_loader), cfg)

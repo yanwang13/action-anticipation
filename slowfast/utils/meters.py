@@ -229,7 +229,6 @@ class TestMeter(object):
         overall_iters,
         multi_label=False,
         ensemble_method="sum",
-        #multitask=False,
     ):
         """
         Construct tensors to store the predictions and labels. Expect to get
@@ -263,12 +262,6 @@ class TestMeter(object):
         )
         self.clip_count = torch.zeros((num_videos)).long()
 
-        #if multitask:
-        #    self.multitask = True
-        #    self.video_int_preds = torch.zeros((num_videos, 10))
-        #    self.video_int_labels = (torch.zeros((num_videos)).long())
-        #else:
-        #    self.multitask = False
         # Reset metric.
         self.reset()
 
@@ -281,10 +274,6 @@ class TestMeter(object):
         if self.multi_label:
             self.video_preds -= 1e10
         self.video_labels.zero_()
-
-        #if self.multitask:
-        #    self.video_int_preds.zero_()
-        #    self.video_int_labels.zero_()
 
     def update_stats(self, preds, labels, clip_ids, int_preds=None, int_labels=None):
         """
@@ -649,12 +638,6 @@ class ValMeter(object):
         self.all_labels = []
 
         self.save_ckpt_thres = cfg.TRAIN.SAVE_CKPT_THRES
-        #if cfg.MULTI_TASK:
-        #    self.multitask = True
-        #    self.num_int_top1_mis = 0
-        #    self.num_int_top5_mis = 0
-        #else:
-        #    self.multitask = False
 
     def reset(self):
         """
@@ -668,10 +651,6 @@ class ValMeter(object):
         self.num_samples = 0
         self.all_preds = []
         self.all_labels = []
-
-        #if self.multitask:
-        #    self.num_int_top1_mis = 0
-        #    self.num_int_top5_mis = 0
 
     def iter_tic(self):
         """
@@ -698,10 +677,6 @@ class ValMeter(object):
         self.num_top1_mis += top1_err * mb_size
         self.num_top5_mis += top5_err * mb_size
         self.num_samples += mb_size
-
-        #if self.multitask:
-        #    self.num_int_top1_mis += int_top1_err * mb_size
-        #    self.num_int_top5_mis += int_top5_err * mb_size
 
     def update_predictions(self, preds, labels):
         """
@@ -782,7 +757,6 @@ class ValMeter(object):
             stats["min_top5_err"] = self.min_top5_err
 
             if writer is not None:
-                #if not self.multitask:
                 writer.add_scalars(
                     {
                         "Val/Epoch_Top1_err": stats["top1_err"],
@@ -792,21 +766,6 @@ class ValMeter(object):
                     },
                     global_step = cur_epoch,
                 )
-                #else:
-                    # check the top1_err value, see how to add_scalars
-                    #import pdb
-                    #/pdb.set_trace()
-                    #writer.add_scalars(
-                    #    {
-                    #        "Val/Epoch_Top1_err": stats["top1_err"],
-                    #        "Val/Epoch_Top5_err": stats["top5_err"],
-                    #        "Val/Min_Top1_err": stats["min_top1_err"],
-                    #        "Val/Min_Top5_err": stats["min_top5_err"],
-                    #        "Val/Intention_Top1_err": int_top1_err,
-                    #        "Val/Intention_Top5_err": int_top5_err,
-                    #    },
-                    #    global_step = cur_epoch,
-                    #)
 
         logging.log_json_stats(stats)
         return save_ckpts, self.min_top1_err

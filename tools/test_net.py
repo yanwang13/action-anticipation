@@ -4,6 +4,7 @@
 """Multi-view test a video classification model."""
 
 import numpy as np
+import pandas as pd
 import os
 import pickle
 import torch
@@ -18,6 +19,7 @@ from slowfast.datasets import loader
 from slowfast.models import build_model
 from slowfast.utils.meters import AVAMeter, TestMeter
 from slowfast.utils.mtl_meters import MTLTestMeter
+from slowfast.utils.vna_meters import Verb_Noun_Action_TestMeter
 
 logger = logging.get_logger(__name__)
 
@@ -100,9 +102,9 @@ def perform_test(test_loader, model, test_meter, cfg, writer=None):
             preds = model(inputs)
 
             # TO DO: modify for verb, noun, action setup
-            if cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy':
-                if len(labels.shape) == 2: # For vnmce setup
-                    labels = labels[:, -1]
+            #if cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy':
+            #    if len(labels.shape) == 2: # For vnmce setup
+            #       labels = labels[:, -1]
 
             if not cfg.MULTI_TASK:
                 # Gather all the predictions across all the devices to perform ensemble.
@@ -112,14 +114,23 @@ def perform_test(test_loader, model, test_meter, cfg, writer=None):
                     )
                 if cfg.NUM_GPUS:
                     preds = preds.cpu()
-                    labels = labels.cpu()
+                    if isinstance(labels, (dict, )):
+                        labels = {k: v.cpu() for k, v in labels.items()}
+                    else:
+                        labels = labels.cpu()
                     video_idx = video_idx.cpu()
 
                 test_meter.iter_toc()
                 # Update and log stats.
-                test_meter.update_stats(
-                    preds.detach(), labels.detach(), video_idx.detach()
-                )
+                if cfg.LOG_VERB_NOUN:
+                    labels = {k: v.detach() for k, v in labels.items()}
+                    test_meter.update_stats(
+                        preds.detach(), labels, video_idx.detach()
+                    )
+                else:
+                    test_meter.update_stats(
+                        preds.detach(), labels['action'].detach(), video_idx.detach()
+                    )
                 test_meter.log_iter_stats(cur_iter)
 
             else: # multitask
@@ -243,6 +254,23 @@ def test(cfg):
                 len(test_loader),
                 cfg.DATA.MULTI_LABEL,
                 cfg.DATA.ENSEMBLE_METHOD,
+            )
+        elif cfg.LOG_VERB_NOUN:
+            action_csv_path = os.path.join(cfg.DATA.PATH_TO_DATA_DIR, 'actions.csv')
+            actions = pd.read_csv(os.path.join(action_csv_path))
+            logger.info(f'Reading action info from {action_csv_path}')
+            vi = misc.get_marginal_indexes(actions, 'verb')
+            ni = misc.get_marginal_indexes(actions, 'noun')
+            logger.info(f'Get marginal indexes for verb & noun')
+
+            test_meter = Verb_Noun_Action_TestMeter(
+                len(test_loader.dataset)
+                // (cfg.TEST.NUM_ENSEMBLE_VIEWS * cfg.TEST.NUM_SPATIAL_CROPS),
+                cfg.TEST.NUM_ENSEMBLE_VIEWS * cfg.TEST.NUM_SPATIAL_CROPS,
+                cfg.MODEL.NUM_CLASSES[0],
+                len(test_loader),
+                vi,
+                ni,
             )
         else:
             test_meter = TestMeter(

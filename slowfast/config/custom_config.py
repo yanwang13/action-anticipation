@@ -8,6 +8,7 @@ def add_custom_config(_C):
     # Add your own customized configs.
     _C.MULTI_TASK = False
     _C.UNCERTAINTY = False
+    _C.LOG_VERB_NOUN = True #False
 
     _C.TRAIN.FINETUNE = False
     _C.TRAIN.FINETUNE_EPOCH = 3
