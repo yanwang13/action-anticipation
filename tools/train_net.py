@@ -245,25 +245,6 @@ def train_epoch(
                         },
                         global_step=data_size * cur_epoch + cur_iter,
                     )
-                else:
-                    writer.add_scalars(
-                        {
-                            #"Train/loss": loss,
-                            "Train/lr": lr,
-                            #"Train/Top1_err": top1_err,
-                            #"Train/Top5_err": top5_err,
-                        },
-                        global_step=data_size * cur_epoch + cur_iter,
-                    )
-#                    if cfg.UNCERTAINTY and writer is not None:
-#                        verb_weight, noun_weight = criterion.get_weights()
-#                        writer.add_scalars(
-#                            {
-#                                "Train/verb_weight": verb_weight,
-#                                "Train/noun_weight": noun_weight,
-#                            },
-#                            global_step=data_size * cur_epoch + cur_iter,
-#                        )
         train_meter.log_iter_stats(cur_epoch, cur_iter)
         train_meter.iter_tic()
 
