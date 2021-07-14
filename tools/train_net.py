@@ -90,11 +90,6 @@ def train_epoch(
         # Explicitly declare reduction to mean.
         if criterion is None:
             loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
-        if cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy':
-            actions = pd.read_csv(os.path.join(cfg.DATA.PATH_TO_DATA_DIR, 'actions.csv'))
-            vi = misc.get_marginal_indexes(actions, 'verb')
-            ni = misc.get_marginal_indexes(actions, 'noun')
-            loss_fun.add_marginal_masks([vi, ni], cfg.MODEL.NUM_CLASSES[0])
 
         # Compute the loss.
         # print(f'preds shape: {preds.shape}, labels shape: {labels.shape}')
@@ -106,7 +101,7 @@ def train_epoch(
                 loss_noun = loss_fun(preds[1], labels['noun'])
                 loss = 0.5*(loss_verb+loss_noun)
         elif cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy':
-            loss = loss_fun(preds, torch.stack([labels['verb'], labels['noun'], labels['action']], 1))
+            loss = criterion(preds, torch.stack([labels['verb'], labels['noun'], labels['action']], 1))
         else:
             loss = loss_fun(preds, labels['action'])
 
@@ -584,13 +579,25 @@ def train(cfg):
     if du.is_master_proc() and cfg.LOG_MODEL_INFO:
         misc.log_model_info(model, cfg, use_train_input=True)
 
+    # when using uncertainty loss build the module first,
+    # than add it to the optimizer
     if cfg.UNCERTAINTY:
         #criterion = Uncertaintyloss().to(torch.cuda.current_device())
+        logger.info(f'Building Uncertaintyloss')
         if cfg.NUM_GPUS <= 1:
             criterion = Uncertaintyloss().to(next(model.parameters()).device)
         else:
             raise ValueError
         optimizer = optim.construct_optimizer(model, criterion, cfg)
+    elif cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy':
+        logger.info(f'Building Verb Noun Marginal Cross Entropy Loss')
+        criterion = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
+        actions = pd.read_csv(os.path.join(cfg.DATA.PATH_TO_DATA_DIR, 'actions.csv'))
+        vi = misc.get_marginal_indexes(actions, 'verb')
+        ni = misc.get_marginal_indexes(actions, 'noun')
+        criterion.add_marginal_masks([vi, ni], cfg.MODEL.NUM_CLASSES[0])
+
+        optimizer = optim.construct_optimizer(model, cfg=cfg)
     else:
         criterion = None
         # Construct the optimizer.
