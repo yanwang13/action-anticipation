@@ -29,7 +29,7 @@ logger = logging.get_logger(__name__)
 
 
 def train_epoch(
-    train_loader, model, optimizer, train_meter, cur_epoch, cfg, writer=None, lamb=1, criterion=None
+    train_loader, model, optimizer, train_meter, cur_epoch, cfg, writer=None, criterion=None
 ):
     """
     Perform the video training for one epoch.
