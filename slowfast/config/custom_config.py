@@ -17,4 +17,6 @@ def add_custom_config(_C):
     # only specify when useing Epic-kitchen datasets
     _C.TRAIN.EK_VERSION = 55 # 55, 100
     _C.TEST.EK_VERSION = 55 # 55, 100
+
+    _C.SAVE_FEATURE = False
     return _C
