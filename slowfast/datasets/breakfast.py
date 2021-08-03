@@ -59,7 +59,7 @@ def extract_frame_from_dir(images_dir, start_frame, end_frame, sample_idx, num_f
         start_idx = random.uniform(0, delta)
     else:
         start_idx = delta * sample_idx / num_clips
-    #print('start idx: ', start_idx, ' delta: ', delta, ' sample_idx: ', sample_idx, ' num_clips: ', num_clips)
+    #print(f'start idx: ', start_idx, ' delta: ', delta, ' sample_idx: ', sample_idx, ' num_clips: ', num_clips)
     #temporal sampling
     index = np.linspace(start_idx, len(image_path), num_frames, endpoint=False, dtype=int)
     image_path = np.take(np.array(image_path), index)
@@ -99,13 +99,21 @@ class Breakfast(torch.utils.data.Dataset):
         self._construct_loader()
     def _construct_loader(self):
         """
-        construct the charades label loader
+        construct the Breakfast label loader
         """
-        path_to_labelfile = os.path.join(
-            #self.cfg.DATA.PATH_TO_DATA_DIR, "breakfast_{}_01.csv".format(self.mode)
-            self.cfg.DATA.PATH_TO_DATA_DIR, "bf_intention_{}.csv".format(self.mode)
-        )
-        assert os.path.exists(path_to_labelfile), "{} dir not found".format(
+        if self.cfg.SAVE_FEATURE:
+            assert (
+                (self.cfg.TRAIN.ENABLE == False) and (self.cfg.TEST.ENABLE == False)
+            ), "TRAIN/TEST ENABLE should be False for SAVE_FEATURE"
+
+            #path_to_labelfile = os.path.join(self.cfg.DATA.PATH_TO_DATA_DIR, "breakfast_train_01.csv")
+            path_to_labelfile = os.path.join(self.cfg.DATA.PATH_TO_DATA_DIR, "breakfast_train_03.csv")
+        else:
+            path_to_labelfile = os.path.join(
+                #self.cfg.DATA.PATH_TO_DATA_DIR, "breakfast_{}_03.csv".format(self.mode)
+                self.cfg.DATA.PATH_TO_DATA_DIR, "breakfast_{}_01.csv".format(self.mode)
+            )
+        assert os.path.exists(path_to_labelfile), "{} annotation file not found".format(
             path_to_labelfile
         )
 
@@ -119,6 +127,7 @@ class Breakfast(torch.utils.data.Dataset):
         self._labels = []
         self._spatial_temporal_idx = []
 
+        logger.info(f'Reading annotations from {path_to_labelfile}')
         with open(path_to_labelfile) as f:
             reader = csv.DictReader(f)
             for clip_idx, row in enumerate(reader):
@@ -176,20 +185,32 @@ class Breakfast(torch.utils.data.Dataset):
             crop_size = self.cfg.DATA.TRAIN_CROP_SIZE#224
         elif self.mode in ["test"]:
             temporal_sample_index = (
-                self._spatial_temporal_idx[index]
-                // self.cfg.TEST.NUM_SPATIAL_CROPS
+                (
+                    self._spatial_temporal_idx[index]
+                    // self.cfg.TEST.NUM_SPATIAL_CROPS
+                )
+                if self.cfg.TEST.NUM_ENSEMBLE_VIEWS >1
+                else 0
             )
             # spatial_sample_index is in [0, 1, 2]. Corresponding to left,
             # center, or right if width is larger than height, and top, middle,
             # or bottom if height is larger than width.
             spatial_sample_index = (
-                self._spatial_temporal_idx[index]
-                % self.cfg.TEST.NUM_SPATIAL_CROPS
+                (
+                    self._spatial_temporal_idx[index]
+                    % self.cfg.TEST.NUM_SPATIAL_CROPS
+                )
+                if self.cfg.TEST.NUM_SPATIAL_CROPS > 1
+                else 1
             )
-            min_scale, max_scale, crop_size = [self.cfg.DATA.TEST_CROP_SIZE] * 3
+            min_scale, max_scale, crop_size = (
+                [self.cfg.DATA.TEST_CROP_SIZE] * 3
+            )
             # The testing is deterministic and no jitter should be performed.
             # min_scale, max_scale, and crop_size are expect to be the same.
             assert len({min_scale, max_scale, crop_size}) == 1
+            #print(f'spatial_temporal_idx: {self._spatial_temporal_idx[index]}')
+            #print(f'temporal_sample_index: {temporal_sample_index}, spatial_sample_index: {spatial_sample_index}')
         else:
             raise NotImplementedError(
                 "Does not support {} mode".format(self.mode)
