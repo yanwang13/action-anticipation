@@ -80,6 +80,8 @@ def train_epoch(
         lr = optim.get_epoch_lr(cur_epoch + float(cur_iter) / data_size, cfg)
         optim.set_lr(optimizer, lr)
 
+        #logger.info(f'inputs length: {len(inputs)}')
+        #logger.info(f'inputs.shape: {inputs[0].size()}, {inputs[1].size()}')
         if cfg.DETECTION.ENABLE:
             # Compute the predictions.
             preds = model(inputs, meta["boxes"])
@@ -100,6 +102,9 @@ def train_epoch(
                 loss_verb = loss_fun(preds[0], labels['verb'])
                 loss_noun = loss_fun(preds[1], labels['noun'])
                 loss = 0.5*(loss_verb+loss_noun)
+        elif cfg.CAUSAL_INTERVENTION.ENABLE:
+            loss = loss_fun(preds[0], labels['action']) + loss_fun(preds[1], labels['action'])
+            preds = preds[0]
         elif cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy':
             loss = criterion(preds, torch.stack([labels['verb'], labels['noun'], labels['action']], 1))
         else:
@@ -328,6 +333,8 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
 
         else:
             preds = model(inputs)
+            if cfg.CAUSAL_INTERVENTION.ENABLE:
+                preds = preds[0]
 
             if cfg.DATA.MULTI_LABEL:
                 if cfg.NUM_GPUS > 1:

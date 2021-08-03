@@ -13,6 +13,16 @@ _C = CfgNode()
 
 
 # ---------------------------------------------------------------------------- #
+# Causal Intervention options
+# ---------------------------------------------------------------------------- #
+_C.CAUSAL_INTERVENTION = CfgNode()
+_C.CAUSAL_INTERVENTION.ENABLE = False
+#_C.CAUSAL_INTERVENTION.FEATURE_DIC_PATH = "./path to feature_dic.npy"
+#_C.CAUSAL_INTERVENTION.PRIOR_PATH = "./path to prior.npy"
+_C.CAUSAL_INTERVENTION.FEATURE_DIC_PATH = "./tmp/action_dic.npy"
+_C.CAUSAL_INTERVENTION.PRIOR_PATH = "./tmp/bf_prior.npy"
+
+# ---------------------------------------------------------------------------- #
 # Prediction options
 # ---------------------------------------------------------------------------- #
 # The timestpes before the action begins

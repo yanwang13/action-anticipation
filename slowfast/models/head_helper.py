@@ -3,8 +3,10 @@
 
 """ResNe(X)t Head helper."""
 
+import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from detectron2.layers import ROIAlign
 
 import slowfast.utils.logging as logging
@@ -419,3 +421,173 @@ class FeatureSavingResNetBasicHead(nn.Module):
         else:
             return x, features.reshape(features.shape[0], -1)
             #return x, features
+
+class ResNetCausalAwareHead(nn.Module):
+    """
+    ResNe(X)t 3D head.
+    This layer performs a fully-connected projection during training, when the
+    input size is 1x1x1. It performs a convolutional projection during testing
+    when the input size is larger than 1x1x1. If the inputs are from multiple
+    different pathways, the inputs will be concatenated after pooling.
+    """
+
+    def __init__(
+        self,
+        dim_in,
+        num_classes,
+        pool_size,
+        feature_dic_path,
+        prior_path,
+        dropout_rate=0.0,
+        act_func="softmax",
+    ):
+        """
+        The `__init__` method of any subclass should also contain these
+            arguments.
+        ResNetBasicHead takes p pathways as input where p in [1, infty].
+
+        Args:
+            dim_in (list): the list of channel dimensions of the p inputs to the
+                ResNetHead.
+            num_classes (int): the channel dimensions of the p outputs to the
+                ResNetHead.
+            pool_size (list): the list of kernel sizes of p spatial temporal
+                poolings, temporal pool kernel size, spatial pool kernel size,
+                spatial pool kernel size in order.
+            dropout_rate (float): dropout rate. If equal to 0.0, perform no
+                dropout.
+            act_func (string): activation function to use. 'softmax': applies
+                softmax on the output. 'sigmoid': applies sigmoid on the output.
+        """
+        super(ResNetCausalAwareHead, self).__init__()
+        assert (
+            len({len(pool_size), len(dim_in)}) == 1
+        ), "pathway dimensions are not consistent."
+        self.num_pathways = len(pool_size)
+
+        for pathway in range(self.num_pathways):
+            if pool_size[pathway] is None:
+                avg_pool = nn.AdaptiveAvgPool3d((1, 1, 1))
+            else:
+                avg_pool = nn.AvgPool3d(pool_size[pathway], stride=1)
+            self.add_module("pathway{}_avgpool".format(pathway), avg_pool)
+
+        if dropout_rate > 0.0:
+            self.dropout = nn.Dropout(dropout_rate)
+        # Perform FC in a fully convolutional manner. The FC layer will be
+        # initialized with a different std comparing to convolutional layers.
+        self.predictor = nn.Linear(sum(dim_in), num_classes, bias=True)
+        self.causal_predictor = CausalPredictor(
+            dim_in,
+            num_classes,
+            pool_size,
+            feature_dic_path,
+            prior_path,
+        #    dropout_rate=0.0,
+        )
+
+        # Softmax for evaluation and testing.
+        if act_func == "softmax":
+            self.act = nn.Softmax(dim=4)
+            self.causal_act = nn.Softmax(dim=1)
+        elif act_func == "sigmoid":
+            self.act = nn.Sigmoid()
+        else:
+            raise NotImplementedError(
+                "{} is not supported as an activation"
+                "function.".format(act_func)
+            )
+        logger.info('Use Causal Aware head')
+
+    def forward(self, inputs):
+        assert (
+            len(inputs) == self.num_pathways
+        ), "Input tensor does not contain {} pathway".format(self.num_pathways)
+        pool_out = []
+        for pathway in range(self.num_pathways):
+            m = getattr(self, "pathway{}_avgpool".format(pathway))
+            pool_out.append(m(inputs[pathway]))
+        features = torch.cat(pool_out, 1)
+        # (N, C, T, H, W) -> (N, T, H, W, C).
+        features = features.permute((0, 2, 3, 4, 1))
+        # Perform dropout.
+        if hasattr(self, "dropout"):
+            features = self.dropout(features)
+        #logger.info(f'features shape: {x.size()}')
+        # N x feature_size
+        class_logits = self.predictor(features)
+        #logger.info(f'features shape: {x.size()}')
+        causal_logits = self.causal_predictor(features)
+
+        # Performs fully convlutional inference.
+        if not self.training:
+            class_logits = self.act(class_logits)
+            class_logits = class_logits.mean([1, 2, 3])
+
+            causal_logits = self.causal_act(causal_logits)
+            #causal_logits = causal_logits.mean([1, 2, 3])
+
+
+        class_logits = class_logits.view(class_logits.shape[0], -1)
+
+        causal_logits = causal_logits.view(causal_logits.shape[0], -1)
+        #logger.info(f'features shape: {x.size()}')
+        return class_logits, causal_logits
+
+class CausalPredictor(nn.Module):
+    def __init__(
+        self,
+        dim_in,
+        num_classes,
+        pool_size,
+        feature_dic_path,
+        prior_path,
+    #    dropout_rate=0.0,
+    ):
+        super(CausalPredictor, self).__init__()
+        self.feature_size = sum(dim_in)
+        self.embedding_size = 1024 # cfg.MODEL.CAUSAL_EMBEDDING_SIZE
+        self.causal_score = nn.Linear(2*self.feature_size, num_classes)
+        self.Wx = nn.Linear(self.feature_size, self.embedding_size)
+        self.Wz = nn.Linear(self.feature_size, self.embedding_size)
+
+        nn.init.normal_(self.causal_score.weight, std=0.01)
+        nn.init.normal_(self.Wx.weight, std=0.02)
+        nn.init.normal_(self.Wz.weight, std=0.02)
+        nn.init.constant_(self.causal_score.bias, 0)
+        nn.init.constant_(self.Wx.bias, 0)
+        nn.init.constant_(self.Wz.bias, 0)
+
+        self.dic = torch.tensor(np.load(feature_dic_path), dtype=torch.float)
+        self.prior = torch.tensor(np.load(prior_path), dtype=torch.float)
+
+    def forward(self, x):
+        assert (
+            x.size(1)==1 and x.size(2)==1 and x.size(3)==1
+        ), "Not sure about the influence different feature size e.g. (8, 1, 2, 2, 2304)"
+
+        x = x.contiguous().view(x.size(0), -1)
+        length = x.size(0)
+
+        if x.is_cuda:
+            device = x.get_device()
+            dic_z = self.dic.to(device)
+            prior = self.prior.to(device)
+        else:
+            dic_z = self.dic
+            prior = self.prior
+
+        attention = torch.mm(self.Wx(x), self.Wz(dic_z).t()) / (self.embedding_size ** 0.5)
+        attention = F.softmax(attention, 1)
+        z_hat = attention.unsqueeze(2) * dic_z.unsqueeze(0)
+        z = torch.matmul(prior.unsqueeze(0), z_hat).squeeze(1)
+        #xz = torch.cat((x.unsqueeze(1).repeat(1, length, 1), z.unsqueeze(0).repeat(length, 1, 1)), 2).view(-1, 2*x.size(1))
+        xz = torch.cat((x, z), 1)
+
+        if torch.isnan(xz).sum():
+            print(xz)
+
+        causal_logits = self.causal_score(xz)
+
+
+        return causal_logits
