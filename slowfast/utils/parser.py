@@ -76,7 +76,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def load_config(args):
+def load_config(args, save_config=True):
     """
     Given the arguemnts, load and initialize the configs.
     Args:
@@ -107,4 +107,9 @@ def load_config(args):
 
     # Create the checkpoint dir.
     cu.make_checkpoint_dir(cfg.OUTPUT_DIR)
+
+    if save_config:
+        with open(os.path.join(cfg.OUTPUT_DIR, 'config.yaml'), 'w') as f:
+            f.write(cfg.dump())
+        print(f"Save config to {os.path.join(cfg.OUTPUT_DIR, 'config.yaml')}")
     return cfg
