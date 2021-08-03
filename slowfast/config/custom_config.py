@@ -18,5 +18,9 @@ def add_custom_config(_C):
     _C.TRAIN.EK_VERSION = 55 # 55, 100
     _C.TEST.EK_VERSION = 55 # 55, 100
 
+    # breakfast split selection
+    _C.DATA.BREAKFAST_SPLIT = 3 # 1, 2, 3, 4
+
     _C.SAVE_FEATURE = False
+
     return _C

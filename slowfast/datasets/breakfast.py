@@ -107,11 +107,13 @@ class Breakfast(torch.utils.data.Dataset):
             ), "TRAIN/TEST ENABLE should be False for SAVE_FEATURE"
 
             #path_to_labelfile = os.path.join(self.cfg.DATA.PATH_TO_DATA_DIR, "breakfast_train_01.csv")
-            path_to_labelfile = os.path.join(self.cfg.DATA.PATH_TO_DATA_DIR, "breakfast_train_03.csv")
+            #path_to_labelfile = os.path.join(self.cfg.DATA.PATH_TO_DATA_DIR, "breakfast_train_03.csv")
+            path_to_labelfile = os.path.join(self.cfg.DATA.PATH_TO_DATA_DIR, f"breakfast_train_0{self.cfg.DATA.BREAKFAST_SPLIT}.csv")
         else:
             path_to_labelfile = os.path.join(
                 #self.cfg.DATA.PATH_TO_DATA_DIR, "breakfast_{}_03.csv".format(self.mode)
-                self.cfg.DATA.PATH_TO_DATA_DIR, "breakfast_{}_01.csv".format(self.mode)
+                #self.cfg.DATA.PATH_TO_DATA_DIR, "breakfast_{}_01.csv".format(self.mode)
+                self.cfg.DATA.PATH_TO_DATA_DIR, "breakfast_{}_0{}.csv".format(self.mode, self.cfg.DATA.BREAKFAST_SPLIT)
             )
         assert os.path.exists(path_to_labelfile), "{} annotation file not found".format(
             path_to_labelfile
