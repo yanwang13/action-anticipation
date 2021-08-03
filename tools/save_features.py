@@ -25,6 +25,38 @@ from slowfast.utils.vna_meters import Verb_Noun_Action_TestMeter
 
 logger = logging.get_logger(__name__)
 
+def generate_action_feature_dic(cfg):
+    logger.info('Generating action feature dic .....')
+    # How many actions are there in the dataset
+    action_csv_path = os.path.join(cfg.DATA.PATH_TO_DATA_DIR, 'actions.csv')
+    actions = pd.read_csv(os.path.join(action_csv_path))
+    logger.info(f'Reading action info from {action_csv_path}')
+
+    feature_base_dir = os.path.join(cfg.OUTPUT_DIR, "features")
+    features_dir = os.listdir(feature_base_dir)
+
+    features_dic = []
+    for a in range(len(actions)):
+        if str(a) in features_dir:
+            features_path = glob.glob(os.path.join(feature_base_dir, str(a))+'/*.npy')
+            features = []
+            for feature_path in features_path:
+                cur_feature = np.load(feature_path)
+                features.append(cur_feature.reshape((cur_feature.shape[-1],)))
+            features = np.stack(features, axis=0)
+            logger.info(features.shape)
+            action_feature = np.mean(features, axis=0)
+            features_dic.append(action_feature)
+        else:
+            logger.info(f'set zeros for action {a}')
+            features_dic.append(np.zeros(features_dic[0].shape))
+    features_dic = np.stack(features_dic, axis=0)
+
+    save_path = os.path.join(cfg.OUTPUT_DIR, 'action_dic.npy')
+    np.save(save_path, features_dic)
+    logger.info(f'Save action feature dic to {save_path}')
+    return
+
 def save_features_to_dir(features, labels, save_feature_dir):
     for (feature, label) in zip(features, labels):
         label = label.item()
@@ -33,6 +65,7 @@ def save_features_to_dir(features, labels, save_feature_dir):
             os.makedirs(label_dir)
         filename = str(len(glob.glob(label_dir+'/*.npy'))) + '.npy'
         np.save(os.path.join(label_dir, filename), feature.cpu().detach().numpy())
+    return
 
 @torch.no_grad()
 def extract_features(test_loader, model, test_meter, cfg):
@@ -205,12 +238,18 @@ def main():
             slowfast/config/defaults.py
     """
     args = parse_args()
-    cfg = load_config(args)
+    cfg = load_config(args, save_config=False)
 
-    #cfg.TEST.NUM_ENSEMBLE_VIEWS = 1
-    #cfg.TEST.NUM_SPATIAL_CROPS = 1
     cfg.SAVE_FEATURE = True
-    cfg.DATA.TEST_CROP_SIZE = cfg.DATA.TRAIN_CROP_SIZE
+    cfg.TRAIN.ENABLE = False
+    cfg.TEST.ENABLE = False
+
+    #cfg.TEST.NUM_ENSEMBLE_VIEWS = 10
+    cfg.TEST.NUM_ENSEMBLE_VIEWS = 1
+    cfg.TEST.NUM_SPATIAL_CROPS = 1
+
+    cfg.DATA.TEST_CROP_SIZE = cfg.DATA.TRAIN_CROP_SIZE # expected to be 224
+    cfg.DATA.RANDOM_FLIP = False
     # Set up environment.
     du.init_distributed_training(cfg)
     # Set random seed from configs.
@@ -223,6 +262,9 @@ def main():
     # Print config.
     logger.info("Save features with config:")
     logger.info(cfg)
+    with open(os.path.join(cfg.OUTPUT_DIR, 'config.yaml'), 'w') as f:
+        f.write(cfg.dump())
+    print(f"Save config to {os.path.join(cfg.OUTPUT_DIR, 'config.yaml')}")
 
     # Build the video model and print model statistics.
     model = build_model(cfg)
@@ -285,6 +327,7 @@ def main():
 
     # # Perform multi-view test on the entire dataset.
     extract_features(test_loader, model, test_meter, cfg)
+    generate_action_feature_dic(cfg)
 
 if __name__ == "__main__":
     main()
