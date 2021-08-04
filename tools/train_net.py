@@ -581,8 +581,12 @@ def train(cfg):
         logger.info(f'Building Verb Noun Marginal Cross Entropy Loss')
         criterion = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
         actions = pd.read_csv(os.path.join(cfg.DATA.PATH_TO_DATA_DIR, 'actions.csv'))
-        vi = misc.get_marginal_indexes(actions, 'verb')
-        ni = misc.get_marginal_indexes(actions, 'noun')
+        if cfg.TEST.DATASET=="breakfast":
+            vi = misc.get_marginal_indexes(actions, 'verb')
+            ni = misc.get_marginal_indexes(actions, 'noun')
+        else:
+            vi = misc.get_marginal_indexes(actions, 'verb_class')
+            ni = misc.get_marginal_indexes(actions, 'noun_class')
         criterion.add_marginal_masks([vi, ni], cfg.MODEL.NUM_CLASSES[0])
 
         optimizer = optim.construct_optimizer(model, cfg=cfg)
@@ -613,8 +617,12 @@ def train(cfg):
             action_csv_path = os.path.join(cfg.DATA.PATH_TO_DATA_DIR, 'actions.csv')
             actions = pd.read_csv(os.path.join(action_csv_path))
             logger.info(f'Reading action info from {action_csv_path}')
-            vi = misc.get_marginal_indexes(actions, 'verb')
-            ni = misc.get_marginal_indexes(actions, 'noun')
+            if cfg.TEST.DATASET=="breakfast":
+                vi = misc.get_marginal_indexes(actions, 'verb')
+                ni = misc.get_marginal_indexes(actions, 'noun')
+            else:
+                vi = misc.get_marginal_indexes(actions, 'verb_class')
+                ni = misc.get_marginal_indexes(actions, 'noun_class')
 
             train_meter = TrainMeter(len(train_loader), cfg)
             val_meter = Verb_Noun_Action_ValMeter(len(val_loader), cfg, vi, ni)

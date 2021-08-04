@@ -263,8 +263,12 @@ def test(cfg):
             action_csv_path = os.path.join(cfg.DATA.PATH_TO_DATA_DIR, 'actions.csv')
             actions = pd.read_csv(os.path.join(action_csv_path))
             logger.info(f'Reading action info from {action_csv_path}')
-            vi = misc.get_marginal_indexes(actions, 'verb')
-            ni = misc.get_marginal_indexes(actions, 'noun')
+            if cfg.TEST.DATASET=="breakfast":
+                vi = misc.get_marginal_indexes(actions, 'verb')
+                ni = misc.get_marginal_indexes(actions, 'noun')
+            else:
+                vi = misc.get_marginal_indexes(actions, 'verb_class')
+                ni = misc.get_marginal_indexes(actions, 'noun_class')
             logger.info(f'Get marginal indexes for verb & noun')
 
             test_meter = Verb_Noun_Action_TestMeter(
