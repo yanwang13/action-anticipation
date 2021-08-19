@@ -93,6 +93,12 @@ _C.TRAIN.CHECKPOINT_TYPE = "pytorch"
 # If True, perform inflation when loading checkpoint.
 _C.TRAIN.CHECKPOINT_INFLATE = False
 
+# If True, reset epochs when loading checkpoint.
+_C.TRAIN.CHECKPOINT_EPOCH_RESET = False
+
+# If set, clear all layer names according to the pattern provided.
+_C.TRAIN.CHECKPOINT_CLEAR_NAME_PATTERN = ()  # e.g. ("backbone.",)
+
 
 # ---------------------------------------------------------------------------- #
 # Testing options
