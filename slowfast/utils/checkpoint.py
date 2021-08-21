@@ -289,6 +289,17 @@ def load_checkpoint(
             ms.load_state_dict(inflated_model_dict, strict=False)
         else:
             # TO DO: Add if clear_name_pattern
+            if clear_name_pattern:
+                for item in clear_name_pattern:
+                    model_state_dict_new = OrderedDict()
+                    for k in checkpoint["model_state"]:
+                        if item in k:
+                            k_re = k.replace(item, "")
+                            model_state_dict_new[k_re] = checkpoint["model_state"][k]
+                            logger.info("renaming: {} -> {}".format(k, k_re))
+                        else:
+                            model_state_dict_new[k] = checkpoint["model_state"][k]
+                    checkpoint["model_state"] = model_state_dict_new
             pre_train_dict = checkpoint["model_state"]
             model_dict = ms.state_dict()
             # Match pre-trained weights taht have the same shapeas current model.
@@ -311,11 +322,12 @@ def load_checkpoint(
             ms.load_state_dict(pre_train_dict_match, strict=False)
             #ms.load_state_dict(checkpoint["model_state"])
             epoch = -1
+
+        if "epoch" in checkpoint.keys() and not epoch_reset:
+            epoch = checkpoint["epoch"]
             # Load the optimizer state (commonly not done when fine-tuning)
             if optimizer:
                 optimizer.load_state_dict(checkpoint["optimizer_state"])
-        if "epoch" in checkpoint.keys() and not epoch_reset:
-            epoch = checkpoint["epoch"]
         else:
             epoch = -1
     return epoch
