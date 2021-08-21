@@ -373,7 +373,7 @@ class Verb_Noun_Action_TestMeter(object):
     def iter_toc(self):
         self.iter_timer.pause()
 
-    def finalize_metrics(self, ks=(1, 5)):
+    def finalize_metrics(self, ks=(1, 3, 5)):
         """
         Calculate and log the final ensembled metrics.
         ks (tuple): list of top-k values for topk_accuracies. For example,
@@ -428,5 +428,16 @@ class Verb_Noun_Action_TestMeter(object):
             stats["noun_top{}_acc".format(k)] = "{:.{prec}f}".format(noun_topk, prec=2)
         for k, topk in zip(ks, topks):
             stats["top{}_acc".format(k)] = "{:.{prec}f}".format(topk, prec=2)
+
+        # Compute the recalls
+        for k in ks:
+            action_recall = metrics.topk_recall(self.video_preds, self.video_labels, k)
+            stats["top{}_recall".format(k)] = "{:.{prec}f}".format(action_recall, prec=2)
+
+            verb_recall = metrics.topk_recall(verb_preds, self.verb_video_labels, k)
+            stats["verb_top{}_recall".format(k)] = "{:.{prec}f}".format(verb_recall, prec=2)
+
+            noun_recall = metrics.topk_recall(noun_preds, self.noun_video_labels, k)
+            stats["noun_top{}_recall".format(k)] = "{:.{prec}f}".format(noun_recall, prec=2)
 
         logging.log_json_stats(stats)

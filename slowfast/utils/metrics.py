@@ -109,13 +109,47 @@ def multitask_topk_accuracies(preds, labels, ks, use_cuda=True):
         preds (array): array of predictions. Dimension is N.
         labels (array): array of labels. Dimension is N.
         ks (list): list of ks to calculate the top accuracies.
-    This is implementation is referenced from
+    This implementation is referenced from
     https://github.com/epic-kitchens/epic-kitchens-slowfast/blob/master/slowfast/utils/metrics.py
     """
     num_multitask_topks_correct = multitask_topks_correct(preds, labels, ks, use_cuda)
     return [(x / preds[0].size(0)) * 100.0 for x in num_multitask_topks_correct]
 
-#def topk_recall(preds, labels, k=5)
+def selected_class_topk_accuracy(scores, labels, ks, selected_class):
+    """
+    this implementation is referenced from
+    https://github.com/fpv-iplab/rulstm/blob/master/RULSTM/utils.py
+    """
+    idx = labels == selected_class
+    scores = scores[idx]
+    labels = labels[idx]
+
+    rankings = scores.argsort()
+    # trim to max k to avoid extra computation
+    maxk = np.max(ks)
+
+    # compute true positives in the top-maxk predictions
+    tp = rankings[:, :maxk] == labels.reshape(-1, 1)
+
+    tp = tp.numpy()
+    # trim to selected ks and compute accuracies
+    return [tp[:, :k].max(1).mean() for k in ks]
+
+def topk_recall(preds, labels, k=5, classes=None):
+    """
+    this implementation is referenced from
+    https://github.com/fpv-iplab/rulstm/blob/master/RULSTM/utils.py
+    """
+    unique = np.unique(labels)
+    if classes is None:
+        classes = unique
+    else:
+        classes = np.intersect1d(classes, unique)
+    recalls = 0
+
+    for c in classes:
+        recalls += selected_class_topk_accuracy(preds, labels, ks=(k,), selected_class=c)[0]
+    return recalls/len(classes) * 100.0
 
 
 def verb_noun_action_evaluations(preds, labels, ks, vi, ni, acc=True, recall=False):
