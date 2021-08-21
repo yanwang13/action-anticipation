@@ -550,6 +550,7 @@ class CausalPredictor(nn.Module):
         self.causal_score = nn.Linear(2*self.feature_size, num_classes)
         self.Wx = nn.Linear(self.feature_size, self.embedding_size)
         self.Wz = nn.Linear(self.feature_size, self.embedding_size)
+        self.avgpool = nn.AdaptiveAvgPool3d(1)
 
         nn.init.normal_(self.causal_score.weight, std=0.01)
         nn.init.normal_(self.Wx.weight, std=0.02)
@@ -562,11 +563,19 @@ class CausalPredictor(nn.Module):
         self.prior = torch.tensor(np.load(prior_path), dtype=torch.float)
 
     def forward(self, x):
-        assert (
-            x.size(1)==1 and x.size(2)==1 and x.size(3)==1
-        ), "Not sure about the influence different feature size e.g. (8, 1, 2, 2, 2304)"
+        #assert (
+        #    x.size(1)==1 and x.size(2)==1 and x.size(3)==1
+        #), "Not sure about the influence different feature size e.g. (8, 1, 2, 2, 2304)"
+        #logger.info(f'features input shape: {x.size()}')
+        #print(f'features input shape: {x.size()}')
+        if not self.training:
+            # (N, T, H, W, C) -> (N, C, T, H, W).
+            x = x.permute((0, 4, 1, 2, 3))
+            x = self.avgpool(x)
 
+        #print(f'features shape(before view): {x.size()}')
         x = x.contiguous().view(x.size(0), -1)
+        #print(f'features shape(after view): {x.size()}')
         length = x.size(0)
 
         if x.is_cuda:
