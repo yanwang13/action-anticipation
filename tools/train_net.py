@@ -103,8 +103,11 @@ def train_epoch(
                 loss_noun = loss_fun(preds[1], labels['noun'])
                 loss = 0.5*(loss_verb+loss_noun)
         elif cfg.CAUSAL_INTERVENTION.ENABLE:
-            loss = loss_fun(preds[0], labels['action']) + loss_fun(preds[1], labels['action'])
-            preds = preds[0]
+            if cfg.CAUSAL_INTERVENTION.CAUSAL_ONLY:
+                loss = loss_fun(preds, labels['action'])
+            else:
+                loss = loss_fun(preds[0], labels['action']) + loss_fun(preds[1], labels['action'])
+                preds = preds[0]
         elif cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy':
             loss = criterion(preds, torch.stack([labels['verb'], labels['noun'], labels['action']], 1))
         else:
@@ -334,7 +337,8 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
         else:
             preds = model(inputs)
             if cfg.CAUSAL_INTERVENTION.ENABLE:
-                preds = preds[0]
+                if cfg.CAUSAL_INTERVENTION.CAUSAL_ONLY == False:
+                    preds = preds[0]
 
             if cfg.DATA.MULTI_LABEL:
                 if cfg.NUM_GPUS > 1:
@@ -672,7 +676,8 @@ def train(cfg):
         # set finetune params if needed
         if cfg.TRAIN.FINETUNE:
             if cur_epoch < cfg.TRAIN.FINETUNE_EPOCH:
-                set_finetune_mode(model, 'fc')
+                #set_finetune_mode(model, 'fc')
+                set_finetune_mode(model, 'freeze_s1_s2_s3')
             else:
                 set_finetune_mode(model, 'all')
 

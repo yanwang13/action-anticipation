@@ -103,7 +103,8 @@ def perform_test(test_loader, model, test_meter, cfg, writer=None):
             #logger.info(f'inputs.shape: {inputs[0].size()}, {inputs[1].size()}')
             preds = model(inputs)
             if cfg.CAUSAL_INTERVENTION.ENABLE:
-                preds = preds[0]
+                if cfg.CAUSAL_INTERVENTION.CAUSAL_ONLY == False:
+                    preds = preds[0]
 
             # TO DO: modify for verb, noun, action setup
             #if cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy':
