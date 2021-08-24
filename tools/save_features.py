@@ -8,6 +8,7 @@ import pandas as pd
 import os
 import glob
 import pickle
+import lmdb
 import torch
 from fvcore.common.file_io import PathManager
 
@@ -67,6 +68,16 @@ def save_features_to_dir(features, labels, save_feature_dir):
         np.save(os.path.join(label_dir, filename), feature.cpu().detach().numpy())
     return
 
+def save_features_to_lmdb(features, env, base_idx):
+    with env.begin(write=True) as txn:
+        for idx, feature in enumerate(features):
+            key = base_idx + idx
+            #logger.info(key)
+            #logger.info(feature.shape)
+            #logger.info(feature.dtype) #float32
+            txn.put(str(key).encode(), feature.tobytes())
+
+
 @torch.no_grad()
 def extract_features(test_loader, model, test_meter, cfg):
     """
@@ -81,6 +92,9 @@ def extract_features(test_loader, model, test_meter, cfg):
     save_feature_dir = os.path.join(cfg.OUTPUT_DIR, "features")
     if not os.path.exists(save_feature_dir):
         os.makedirs(save_feature_dir)
+
+    env = lmdb.open(save_feature_dir, map_size=1099511627776)
+    logger.info(f'save features to: {save_feature_dir}')
     #logger.info(f'save features to: {save_feature_dir}')
     # Enable eval mode.
     model.eval()
@@ -200,8 +214,9 @@ def extract_features(test_loader, model, test_meter, cfg):
                 )
                 test_meter.log_iter_stats(cur_iter)
 
-            save_features_to_dir(features, labels['action'], save_feature_dir)
-
+            #save_features_to_dir(features, labels['action'], save_feature_dir)
+            logger.info(features.size())
+            save_features_to_lmdb(features.squeeze().detach().cpu().numpy(), env, cur_iter*cfg.TEST.BATCH_SIZE)
 
         test_meter.iter_tic()
 
@@ -248,7 +263,7 @@ def main():
     cfg.TEST.NUM_ENSEMBLE_VIEWS = 1
     cfg.TEST.NUM_SPATIAL_CROPS = 1
 
-    cfg.DATA.TEST_CROP_SIZE = cfg.DATA.TRAIN_CROP_SIZE # expected to be 224
+    #cfg.DATA.TEST_CROP_SIZE = cfg.DATA.TRAIN_CROP_SIZE # expected to be 224
     cfg.DATA.RANDOM_FLIP = False
     # Set up environment.
     du.init_distributed_training(cfg)
@@ -327,7 +342,7 @@ def main():
 
     # # Perform multi-view test on the entire dataset.
     extract_features(test_loader, model, test_meter, cfg)
-    generate_action_feature_dic(cfg)
+    #generate_action_feature_dic(cfg)
 
 if __name__ == "__main__":
     main()

@@ -380,7 +380,7 @@ class FeatureSavingResNetBasicHead(nn.Module):
         # Perform FC in a fully convolutional manner. The FC layer will be
         # initialized with a different std comparing to convolutional layers.
         self.projection = nn.Linear(sum(dim_in), num_classes, bias=True)
-
+        self.avgpool = nn.AdaptiveAvgPool3d(1)
         # Softmax for evaluation and testing.
         if act_func == "softmax":
             self.act = nn.Softmax(dim=4)
@@ -419,6 +419,9 @@ class FeatureSavingResNetBasicHead(nn.Module):
         if self.training:
             return x
         else:
+            # (N, T, H, W, C) -> (N, C, T, H, W).
+            features = features.permute((0, 4, 1, 2, 3))
+            features = self.avgpool(features)
             return x, features.reshape(features.shape[0], -1)
             #return x, features
 
