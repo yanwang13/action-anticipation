@@ -61,5 +61,21 @@ def set_finetune_mode(model, mode):
             param.requires_grad = False
         for param in model.head.parameters(): # Only update the fc layer's params
             param.requires_grad = True
+    elif mode == 'freeze_s1_s2_s3':
+        for param in model.parameters():
+            param.requires_grad = True
+        for param in model.s1.parameters(): # Only freeze lower level conv block
+            param.requires_grad = False
+        for param in model.s2.parameters(): # Only freeze lower level conv block
+            param.requires_grad = False
+        for param in model.s3.parameters(): # Only freeze lower level conv block
+            param.requires_grad = False
+    elif mode == 's5_fc':
+        for param in model.parameters():
+            param.requires_grad = False
+        for param in model.s5.parameters(): # Only freeze lower level conv block
+            param.requires_grad = True
+        for param in model.head.parameters(): # Only update the fc layer's params
+            param.requires_grad = True
     else:
         raise ValueError(f'finetune mode {mode} not supported.')
