@@ -109,11 +109,19 @@ class Breakfast(torch.utils.data.Dataset):
             #path_to_labelfile = os.path.join(self.cfg.DATA.PATH_TO_DATA_DIR, "breakfast_train_01.csv")
             #path_to_labelfile = os.path.join(self.cfg.DATA.PATH_TO_DATA_DIR, "breakfast_train_03.csv")
             path_to_labelfile = os.path.join(self.cfg.DATA.PATH_TO_DATA_DIR, f"breakfast_train_0{self.cfg.DATA.BREAKFAST_SPLIT}.csv")
+        elif self.cfg.RECOGNITION_MTL:
+            path_to_labelfile = os.path.join(
+                self.cfg.DATA.PATH_TO_DATA_DIR, "breakfast_{}_mtl_0{}.csv".format(self.mode, self.cfg.DATA.BREAKFAST_SPLIT)
+            )
         else:
             path_to_labelfile = os.path.join(
                 #self.cfg.DATA.PATH_TO_DATA_DIR, "breakfast_{}_03.csv".format(self.mode)
                 #self.cfg.DATA.PATH_TO_DATA_DIR, "breakfast_{}_01.csv".format(self.mode)
                 self.cfg.DATA.PATH_TO_DATA_DIR, "breakfast_{}_0{}.csv".format(self.mode, self.cfg.DATA.BREAKFAST_SPLIT)
+                #self.cfg.DATA.PATH_TO_DATA_DIR, "breakfast_test_01_w_cur_action.csv"
+                #self.cfg.DATA.PATH_TO_DATA_DIR, "breakfast_test_01_wo_cur_action.csv"
+                #self.cfg.DATA.PATH_TO_DATA_DIR, "breakfast_test_03_wo_cur_action.csv"
+                #self.cfg.DATA.PATH_TO_DATA_DIR, "breakfast_test_03_w_cur_action.csv"
             )
         assert os.path.exists(path_to_labelfile), "{} annotation file not found".format(
             path_to_labelfile
@@ -149,10 +157,23 @@ class Breakfast(torch.utils.data.Dataset):
                         os.path.join(data_path_prefix, row["path"])
                     )
 
-                    action = int(row['label'])-1
-                    label = {'verb': self.actions.iloc[action]['verb'],
-                             'noun': self.actions.iloc[action]['noun'],
-                             'action': action}
+                    if self.cfg.RECOGNITION_MTL:
+                        future_action = int(row['future_action'])
+                        observed_action = int(row['observed_action'])
+
+                        label = {'verb': self.actions.iloc[future_action]['verb'],
+                                 'noun': self.actions.iloc[future_action]['noun'],
+                                 'action': future_action}
+                        if observed_action == -1:
+                            #label.update({'observed_action': len(self.actions)})
+                            label.update({'observed_action': -1})
+                        else:
+                            label.update({'observed_action': observed_action})
+                    else:
+                        action = int(row['label'])-1
+                        label = {'verb': self.actions.iloc[action]['verb'],
+                                 'noun': self.actions.iloc[action]['noun'],
+                                 'action': action}
                     self._labels.append(label)
                     #if self.vn_label:
                     #    vn = self.actions.iloc[action][['verb', 'noun']].values.astype(int)

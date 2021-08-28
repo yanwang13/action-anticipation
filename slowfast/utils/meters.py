@@ -275,7 +275,7 @@ class TestMeter(object):
             self.video_preds -= 1e10
         self.video_labels.zero_()
 
-    def update_stats(self, preds, labels, clip_ids, int_preds=None, int_labels=None):
+    def update_stats(self, preds, labels, clip_ids):
         """
         Collect the predictions from the current batch and perform on-the-flight
         summation as ensemble.

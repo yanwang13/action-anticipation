@@ -23,6 +23,17 @@ from slowfast.models.batchnorm_helper import SubBatchNorm3d
 
 logger = logging.get_logger(__name__)
 
+def filter_none_observed_action_samples(preds, labels):
+    """
+    Filter the data that doesn't has observed action label
+    """
+    if -1 in labels:
+        mask = (labels != -1)
+        labels = torch.masked_select(labels, mask)
+        #logger.info(mask.nonzero().view(-1).size())
+        preds = torch.index_select(preds, 0, mask.nonzero().view(-1))
+
+    return preds, labels
 
 def get_marginal_indexes(actions, mode):
     """

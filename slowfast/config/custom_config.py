@@ -23,4 +23,5 @@ def add_custom_config(_C):
 
     _C.SAVE_FEATURE = False
 
+    _C.RECOGNITION_MTL = False
     return _C

@@ -105,6 +105,10 @@ def perform_test(test_loader, model, test_meter, cfg, writer=None):
             if cfg.CAUSAL_INTERVENTION.ENABLE:
                 if cfg.CAUSAL_INTERVENTION.CAUSAL_ONLY == False:
                     preds = preds[0]
+            if cfg.RECOGNITION_MTL:
+                #recog_preds = preds[1]
+                #recog_preds, recog_labels = misc.filter_none_observed_action_samples(preds[1], labels['observed_action'])
+                preds = preds[0]
 
             # TO DO: modify for verb, noun, action setup
             #if cfg.MODEL.LOSS_FUNC == 'marginal_cross_entropy':
@@ -291,6 +295,17 @@ def test(cfg):
                 cfg.DATA.MULTI_LABEL,
                 cfg.DATA.ENSEMBLE_METHOD,
             )
+
+    #if cfg.RECOGNITION_MTL:
+    #    mtl_test_meter = Recognition_MTLTestMeter(
+    #        len(test_loader.dataset)
+    #        // (cfg.TEST.NUM_ENSEMBLE_VIEWS * cfg.TEST.NUM_SPATIAL_CROPS),
+    #        cfg.TEST.NUM_ENSEMBLE_VIEWS * cfg.TEST.NUM_SPATIAL_CROPS,
+    #        cfg.MODEL.NUM_CLASSES[0],
+    #        len(test_loader), # not sure about the loader size
+    #    )
+    #else:
+    #    mtl_test_meter = None
 
     # Set up writer for logging to Tensorboard format.
     if cfg.TENSORBOARD.ENABLE and du.is_master_proc(

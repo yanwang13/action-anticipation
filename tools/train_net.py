@@ -20,7 +20,7 @@ import slowfast.visualization.tensorboard_vis as tb
 from slowfast.datasets import loader
 from slowfast.models import build_model, set_finetune_mode
 from slowfast.utils.meters import AVAMeter, TrainMeter, ValMeter
-from slowfast.utils.mtl_meters import MTLTrainMeter, MTLValMeter
+from slowfast.utils.mtl_meters import MTLTrainMeter, MTLValMeter, Recognition_MTLTrainMeter, Recognition_MTLValMeter
 from slowfast.utils.vna_meters import Verb_Noun_Action_ValMeter
 from slowfast.utils.multigrid import MultigridSchedule
 from slowfast.models.uncertainty_loss import Uncertaintyloss
@@ -29,7 +29,7 @@ logger = logging.get_logger(__name__)
 
 
 def train_epoch(
-    train_loader, model, optimizer, train_meter, cur_epoch, cfg, writer=None, criterion=None
+    train_loader, model, optimizer, train_meter, cur_epoch, cfg, writer=None, criterion=None, mtl_meter=None
 ):
     """
     Perform the video training for one epoch.
@@ -102,6 +102,28 @@ def train_epoch(
                 loss_verb = loss_fun(preds[0], labels['verb'])
                 loss_noun = loss_fun(preds[1], labels['noun'])
                 loss = 0.5*(loss_verb+loss_noun)
+        elif cfg.RECOGNITION_MTL:
+            if cfg.UNCERTAINTY: # Use uncertainty loss
+                loss, loss_verb, loss_noun = criterion(preds, [labels['action'], labels['observed_action']])
+            else:
+                loss_predict = loss_fun(preds[0], labels['action'])
+                #logger.info(f'before filter: {preds[1].size()}')
+                #logger.info(labels['observed_action'])
+                recog_preds, recog_labels = misc.filter_none_observed_action_samples(preds[1], labels['observed_action'])
+                #logger.info(f'after filter: {recog_preds.size()}')
+                #logger.info(recog_labels)
+                loss_recog = loss_fun(recog_preds, recog_labels)
+                loss = 0.5*(loss_predict+loss_recog)
+                preds = preds[0]
+                #if labels['observed_action'].item() != -1:
+                #    loss_recog = loss_fun(preds[1], labels['observed_action'])
+                #    loss = 0.5*(loss_predict+loss_recog)
+                #    log_observed_action = True
+                #    preds = preds[0]
+                #    recog_preds = preds[1]
+                #else:
+                #    loss = loss_predict
+                #    log_observed_action = False
         elif cfg.CAUSAL_INTERVENTION.ENABLE:
             if cfg.CAUSAL_INTERVENTION.CAUSAL_ONLY:
                 loss = loss_fun(preds, labels['action'])
@@ -216,10 +238,39 @@ def train_epoch(
                         top5_err.item(),
                     )
 
+                if cfg.RECOGNITION_MTL: # log observed action acc
+                    recog_topks_correct = metrics.topks_correct(recog_preds, recog_labels, (1, 5))
+                    recog_top1_err, recog_top5_err = [
+                        (1.0 - x / recog_preds.size(0)) * 100.0 for x in recog_topks_correct
+                    ]
+
+                    # Gather all the predictions across all the devices.
+                    if cfg.NUM_GPUS > 1:
+                        loss_recog, recog_top1_err, recog_top5_err = du.all_reduce(
+                            [loss_recog, recog_top1_err, recog_top5_err]
+                        )
+
+                    # Copy the stats from GPU to CPU (sync point).
+                    loss_recog, recog_top1_err, recog_top5_err = (
+                        loss_recog.item(),
+                        recog_top1_err.item(),
+                        recog_top5_err.item(),
+                    )
 
             train_meter.iter_toc()
             # Update and log stats.
-            if not cfg.MULTI_TASK:
+            if cfg.MULTI_TASK:
+                train_meter.update_stats(
+                    (verb_top1_err, noun_top1_err, top1_err),
+                    (verb_top5_err, noun_top5_err, top5_err),
+                    (loss_verb, loss_noun, loss),
+                    lr,
+                    inputs[0].size(0)
+                    * max(
+                        cfg.NUM_GPUS, 1
+                    ),  # If running  on CPU (cfg.NUM_GPUS == 1), use 1 to represent 1 CPU.
+                )
+            else:
                 train_meter.update_stats(
                     top1_err,
                     top5_err,
@@ -230,19 +281,19 @@ def train_epoch(
                         cfg.NUM_GPUS, 1
                     ),  # If running  on CPU (cfg.NUM_GPUS == 1), use 1 to represent 1 CPU.
                 )
-            else:
-                train_meter.update_stats(
-                    (verb_top1_err, noun_top1_err, top1_err),
-                    (verb_top5_err, noun_top5_err, top5_err),
-                    (loss_verb, loss_noun, loss),
-                    lr,
-                    inputs[0].size(0)
+            if mtl_meter is not None:
+                mtl_meter.iter_toc()
+                mtl_meter.update_stats(
+                    recog_top1_err,
+                    recog_top5_err,
+                    loss_recog,
+                    recog_labels.size(0)
                     * max(
                         cfg.NUM_GPUS, 1
                     ),  # If running  on CPU (cfg.NUM_GPUS == 1), use 1 to represent 1 CPU.
-                    #int_top1_err = int_top1_err.item(),
-                    #int_top5_err = int_top5_err.item(),
                 )
+                mtl_meter.log_iter_stats(cur_epoch, cur_iter)
+                mtl_meter.iter_tic()
             # write to tensorboard format if available.
             if writer is not None:
                 if cfg.DATA.MULTI_LABEL:
@@ -268,10 +319,13 @@ def train_epoch(
         )
     train_meter.log_epoch_stats(cur_epoch, writer)
     train_meter.reset()
+    if mtl_meter is not None:
+        mtl_meter.log_epoch_stats(cur_epoch, writer)
+        mtl_meter.reset()
 
 
 @torch.no_grad()
-def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
+def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None, mtl_meter=None):
     """
     Evaluate the model on the val set.
     Args:
@@ -339,6 +393,10 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
             if cfg.CAUSAL_INTERVENTION.ENABLE:
                 if cfg.CAUSAL_INTERVENTION.CAUSAL_ONLY == False:
                     preds = preds[0]
+            if cfg.RECOGNITION_MTL:
+                recog_preds = preds[1]
+                recog_preds, recog_labels = misc.filter_none_observed_action_samples(preds[1], labels['observed_action'])
+                preds = preds[0]
 
             if cfg.DATA.MULTI_LABEL:
                 if cfg.NUM_GPUS > 1:
@@ -376,18 +434,6 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
                     # Copy the errors from GPU to CPU (sync point).
                     verb_top1_err, verb_top5_err = verb_top1_err.item(), verb_top5_err.item()
                     noun_top1_err, noun_top5_err = noun_top1_err.item(), noun_top5_err.item()
-                    top1_err, top5_err = top1_err.item(), top5_err.item()
-
-                    val_meter.iter_toc()
-                    # Update and log stats.
-                    val_meter.update_stats(
-                        (verb_top1_err, noun_top1_err, top1_err),
-                        (verb_top5_err, noun_top5_err, top5_err),
-                        inputs[0].size(0)
-                        * max(
-                            cfg.NUM_GPUS, 1
-                        ),  # If running  on CPU (cfg.NUM_GPUS == 1), use 1 to represent 1 CPU.
-                    )
 
                 else: # model with only one output
                     num_topks_correct = metrics.topks_correct(preds, labels['action'], (1, 5))
@@ -405,23 +451,57 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
                     # Copy the errors from GPU to CPU (sync point).
                     top1_err, top5_err = top1_err.item(), top5_err.item()
 
-                    val_meter.iter_toc()
-                    # Update and log stats.
-                    val_meter.update_stats(
-                        top1_err,
-                        top5_err,
-                        inputs[0].size(0)
-                        * max(
-                            cfg.NUM_GPUS, 1
-                        ),  # If running  on CPU (cfg.NUM_GPUS == 1), use 1 to represent 1 CPU.
+                if cfg.RECOGNITION_MTL: #and log_observed_action:
+                    recog_topks_correct = metrics.topks_correct(recog_preds, recog_labels, (1, 5))
+                    recog_top1_err, recog_top5_err = [
+                        (1.0 - x / recog_preds.size(0)) * 100.0 for x in recog_topks_correct
+                    ]
+
+                    # Gather all the predictions across all the devices.
+                    if cfg.NUM_GPUS > 1:
+                        recog_top1_err, recog_top5_err = du.all_reduce(
+                            [recog_top1_err, recog_top5_err]
+                        )
+
+                    # Copy the stats from GPU to CPU (sync point).
+                    recog_top1_err, recog_top5_err = (
+                        recog_top1_err.item(),
+                        recog_top5_err.item(),
                     )
 
-                # write to tensorboard format if available. batch_size too small hard to see trend
-                #if writer is not None:
-                #    writer.add_scalars(
-                #        {"Val/Top1_err": top1_err, "Val/Top5_err": top5_err},
-                #        global_step=len(val_loader) * cur_epoch + cur_iter,
-                #    )
+            val_meter.iter_toc()
+            # Update and log stats.
+            if cfg.MULTI_TASK:
+                val_meter.update_stats(
+                    (verb_top1_err, noun_top1_err, top1_err),
+                    (verb_top5_err, noun_top5_err, top5_err),
+                    inputs[0].size(0)
+                    * max(
+                        cfg.NUM_GPUS, 1
+                    ),  # If running  on CPU (cfg.NUM_GPUS == 1), use 1 to represent 1 CPU.
+                )
+            else:
+                val_meter.update_stats(
+                    top1_err,
+                    top5_err,
+                    inputs[0].size(0)
+                    * max(
+                        cfg.NUM_GPUS, 1
+                    ),  # If running  on CPU (cfg.NUM_GPUS == 1), use 1 to represent 1 CPU.
+                )
+
+            if mtl_meter is not None:
+                mtl_meter.iter_toc()
+                mtl_meter.update_stats(
+                    recog_top1_err,
+                    recog_top5_err,
+                    recog_labels.size(0)
+                    * max(
+                        cfg.NUM_GPUS, 1
+                    ),  # If running  on CPU (cfg.NUM_GPUS == 1), use 1 to represent 1 CPU.
+                )
+                mtl_meter.log_iter_stats(cur_epoch, cur_iter)
+                mtl_meter.iter_tic()
 
             #if cfg.MULTI_TASK:
             #    preds = preds[0]
@@ -439,6 +519,9 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
 
     # Log epoch stats.
     save_current_ckpts, best_err = val_meter.log_epoch_stats(cur_epoch, writer)
+    if mtl_meter is not None:
+        mtl_meter.log_epoch_stats(cur_epoch, writer)
+        mtl_meter.reset()
 
     # write to tensorboard format if available.
     if writer is not None:
@@ -446,7 +529,7 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
             writer.add_scalars(
                 {"Val/mAP": val_meter.full_map}, global_step=cur_epoch
             )
-        else:
+        else: # plot confusion matrix
             if not cfg.MULTI_TASK:
                 all_preds = [pred.clone().detach() for pred in val_meter.all_preds]
                 all_labels = [
@@ -633,6 +716,12 @@ def train(cfg):
         else:
             train_meter = TrainMeter(len(train_loader), cfg)
             val_meter = ValMeter(len(val_loader), cfg)
+    if cfg.RECOGNITION_MTL:
+        mtl_train_meter = Recognition_MTLTrainMeter(len(train_loader), cfg)
+        mtl_val_meter = Recognition_MTLValMeter(len(val_loader), cfg)
+    else:
+        mtl_train_meter = None
+        mtl_val_meter = None
 
     # set up writer for logging to Tensorboard format.
     if cfg.TENSORBOARD.ENABLE and du.is_master_proc(
@@ -676,14 +765,15 @@ def train(cfg):
         # set finetune params if needed
         if cfg.TRAIN.FINETUNE:
             if cur_epoch < cfg.TRAIN.FINETUNE_EPOCH:
-                #set_finetune_mode(model, 'fc')
-                set_finetune_mode(model, 'freeze_s1_s2_s3')
+                #set_finetune_mode(model, 'freeze_s1_s2_s3')
+                #set_finetune_mode(model, 's5_fc')
+                set_finetune_mode(model, 'fc')
             else:
                 set_finetune_mode(model, 'all')
 
         # Train for one epoch.
         train_epoch(
-            train_loader, model, optimizer, train_meter, cur_epoch, cfg, writer, criterion=criterion
+            train_loader, model, optimizer, train_meter, cur_epoch, cfg, writer, criterion=criterion, mtl_meter=mtl_train_meter
         )
 
         # Compute precise BN stats.
@@ -705,7 +795,7 @@ def train(cfg):
         if misc.is_eval_epoch(
             cfg, cur_epoch, None if multigrid is None else multigrid.schedule
         ):
-            save_current_ckpts, best_err = eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer)
+            save_current_ckpts, best_err = eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer, mtl_meter=mtl_val_meter)
 
             # Save the checkpoint of the best result
             if save_current_ckpts:
